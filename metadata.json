@@ -1,0 +1,6 @@
+{
+  "name": "Driver Tracker",
+  "description": "Smart Heatmap and GPS log recorder tailored for rideshare drivers.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
