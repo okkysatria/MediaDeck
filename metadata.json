@@ -1,0 +1,5 @@
+{
+  "name": "MediaDeck",
+  "description": "An offline comic reader, gallery viewer, and movie player supporting local folders and Samba network streams.",
+  "requestFramePermissions": []
+}

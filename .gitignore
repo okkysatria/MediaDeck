@@ -1,0 +1,42 @@
+# Gradle / Android build output
+.gradle/
+.kotlin/
+build/
+app/build/
+
+# Local machine config
+local.properties
+.env
+.env.*
+!.env.example
+secrets.properties
+
+# IDE
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Keystore / private keys
+*.jks
+*.keystore
+*.key
+*.pem
+id_rsa*
+
+# Build artifacts / temp
+*.apk
+*.aab
+*.tmp
+*.part
+*.download
+*.cache
+*.bak
+*.old
+captures/
+.artifacts/
