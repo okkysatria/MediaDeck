@@ -3,7 +3,6 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
-import androidx.sqlite.db.SupportSQLiteDatabase
 import com.mediadeck.app.data.comic.Comic
 import com.mediadeck.app.data.comic.ComicDao
 import com.mediadeck.app.data.comic.ComicPage
@@ -42,12 +41,6 @@ abstract class AppDatabase : RoomDatabase() {
                     "comic_reader_database"
                 )
                     .fallbackToDestructiveMigration(dropAllTables = true)
-                    .addCallback(object : Callback() {
-                        override fun onCreate(db: SupportSQLiteDatabase) {
-                            super.onCreate(db)
-                            db.execSQL("INSERT OR IGNORE INTO app_settings (id) VALUES (1)")
-                        }
-                    })
                     .build().also { INSTANCE = it }
             }
         }

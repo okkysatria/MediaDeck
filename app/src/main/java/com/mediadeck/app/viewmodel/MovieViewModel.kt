@@ -217,14 +217,12 @@ class MovieViewModel @Inject constructor(
             _shuffledMovies.value = null
         }
         viewModelScope.launch {
-            val settings = repository.getSettingsDirect()
-            repository.updateSettings(settings.copy(defaultMovieSort = sort))
+            repository.updateSettings { it.copy(defaultMovieSort = sort) }
         }
     }
     fun setLayoutMode(mode: String) {
         viewModelScope.launch {
-            val settings = repository.getSettingsDirect()
-            repository.updateSettings(settings.copy(layoutMode = mode))
+            repository.updateSettings { it.copy(layoutMode = mode) }
         }
     }
     fun setMovieGroupedByFolder(grouped: Boolean) {

@@ -118,6 +118,7 @@ object MediaProcessingEngine {
     }
     private suspend fun processQueuedTask(task: ProcessingTask, priority: Boolean) {
         val key = mediaTaskKey(task)
+        if (!priority) awaitFolderBatchTurn(task.thumbnailVariant)
         if (priority) queuedPriorityUris.remove(key) else queuedNormalUris.remove(key)
         if (!priority && priorityCompletedUris.remove(key)) return
         if (isSuppressed(task, force = false)) return
@@ -417,6 +418,7 @@ object MediaProcessingEngine {
     private suspend fun processFolderTask(task: FolderMosaicTask) {
         val bitmaps = mutableListOf<android.graphics.Bitmap>()
         try {
+            task.mediaItems.firstOrNull()?.third?.let { awaitFolderBatchTurn(it) }
             Log.d("MediaProcessingEngine", "Generating mosaic for folder: ${task.folderKey}")
             for (item in task.mediaItems.take(4)) {
                 val bmp = VideoThumbnailHelper.loadThumbnail(
@@ -442,6 +444,11 @@ object MediaProcessingEngine {
             Log.e("MediaProcessingEngine", "Gagal memproses mosaic folder ${task.folderKey}", e)
         } finally {
             bitmaps.forEach { if (!it.isRecycled) it.recycle() }
+        }
+    }
+    private suspend fun awaitFolderBatchTurn(variant: String) {
+        while (activeFolderMediaBatchKeys.any { it.startsWith("$variant|") }) {
+            kotlinx.coroutines.delay(50L)
         }
     }
     private fun saveFolderThumbnailToDisk(context: Context, bmp: android.graphics.Bitmap, folderKey: String) {

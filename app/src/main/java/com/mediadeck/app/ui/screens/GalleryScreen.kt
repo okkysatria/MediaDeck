@@ -75,8 +75,8 @@ fun GalleryScreen(
     val settings by viewModel.appSettings.collectAsState()
     val isGroupedByFolder by viewModel.isGalleryGroupedByFolder.collectAsState()
     val selectedFolderName by viewModel.selectedGalleryFolderName.collectAsState()
-    LaunchedEffect(viewModel, isGroupedByFolder) {
-        if (!isGroupedByFolder) viewModel.enqueueMissingThumbnails(context)
+    LaunchedEffect(viewModel) {
+        viewModel.enqueueMissingThumbnails(context)
     }
     LaunchedEffect(viewModel, selectedFolderName) {
         selectedFolderName?.let { viewModel.onFolderVisited(context, it) }

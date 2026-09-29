@@ -87,28 +87,31 @@ class ScannerViewModel @Inject constructor(
     }
     fun saveLibraryFolder(context: Context, uri: String, type: String = "") {
         viewModelScope.launch {
-            val settings = repository.getSettingsDirect()
             val normalizedUri = uri.removeSuffix("/")
             val uriWithSlash = if (normalizedUri.endsWith("/")) normalizedUri else "$normalizedUri/"
-            val currentFolders = when (type) {
-                "comics" -> settings.comicFolders
-                "gallery" -> settings.galleryFolders
-                "movies" -> settings.movieFolders
-                else -> settings.libraryFolders
-            }.split(",").filter { 
-                it.isNotEmpty() && 
-                it.removeSuffix("/").let { s -> if (s.endsWith("/")) s else "$s/" } != uriWithSlash 
-            }.toMutableList()
-            currentFolders.add(normalizedUri)
-            val updated = currentFolders.distinct().joinToString(",")
-            val newSettings = when (type) {
-                "comics" -> settings.copy(comicFolders = updated)
-                "gallery" -> settings.copy(galleryFolders = updated)
-                "movies" -> settings.copy(movieFolders = updated)
-                else -> settings.copy(libraryFolders = updated)
+            var hideFromGallery = false
+            repository.updateSettings { settings ->
+                val currentFolders = when (type) {
+                    "comics" -> settings.comicFolders
+                    "gallery" -> settings.galleryFolders
+                    "movies" -> settings.movieFolders
+                    else -> settings.libraryFolders
+                }.split(",").filter {
+                    it.isNotEmpty() &&
+                        it.removeSuffix("/").let { folder -> if (folder.endsWith("/")) folder else "$folder/" } != uriWithSlash
+                }.toMutableList()
+                currentFolders.add(normalizedUri)
+                val updated = currentFolders.distinct().joinToString(",")
+                val nextSettings = when (type) {
+                    "comics" -> settings.copy(comicFolders = updated)
+                    "gallery" -> settings.copy(galleryFolders = updated)
+                    "movies" -> settings.copy(movieFolders = updated)
+                    else -> settings.copy(libraryFolders = updated)
+                }
+                hideFromGallery = nextSettings.hideScannedFromGallery
+                nextSettings
             }
-            repository.updateSettings(newSettings)
-            if (newSettings.hideScannedFromGallery && !com.mediadeck.app.util.media.MediaUtils.isSmbUri(normalizedUri)) {
+            if (hideFromGallery && !com.mediadeck.app.util.media.MediaUtils.isSmbUri(normalizedUri)) {
                 applyGalleryHidingToSingleFolder(context, normalizedUri, true)
             }
         }
@@ -139,15 +142,18 @@ class ScannerViewModel @Inject constructor(
     }
     fun removeLibraryFolder(context: Context, uri: String, type: String = "") {
         viewModelScope.launch {
-            val settings = repository.getSettingsDirect()
             val normalizedUri = uri.removeSuffix("/")
-            if (settings.hideScannedFromGallery && !com.mediadeck.app.util.media.MediaUtils.isSmbUri(normalizedUri)) {
+            val hideFromGallery = repository.getSettingsDirect().hideScannedFromGallery
+            if (hideFromGallery && !com.mediadeck.app.util.media.MediaUtils.isSmbUri(normalizedUri)) {
                 applyGalleryHidingToSingleFolder(context, normalizedUri, false)
             }
-            when (type) {
-                "comics" -> repository.updateSettings(settings.copy(comicFolders = settings.comicFolders.split(",").filter { it.removeSuffix("/") != normalizedUri }.joinToString(",")))
-                "gallery" -> repository.updateSettings(settings.copy(galleryFolders = settings.galleryFolders.split(",").filter { it.removeSuffix("/") != normalizedUri }.joinToString(",")))
-                "movies" -> repository.updateSettings(settings.copy(movieFolders = settings.movieFolders.split(",").filter { it.removeSuffix("/") != normalizedUri }.joinToString(",")))
+            repository.updateSettings { settings ->
+                when (type) {
+                    "comics" -> settings.copy(comicFolders = settings.comicFolders.split(",").filter { it.removeSuffix("/") != normalizedUri }.joinToString(","))
+                    "gallery" -> settings.copy(galleryFolders = settings.galleryFolders.split(",").filter { it.removeSuffix("/") != normalizedUri }.joinToString(","))
+                    "movies" -> settings.copy(movieFolders = settings.movieFolders.split(",").filter { it.removeSuffix("/") != normalizedUri }.joinToString(","))
+                    else -> settings
+                }
             }
             repository.deleteMediaByFolderUri(context, normalizedUri)
         }
@@ -281,8 +287,16 @@ class ScannerViewModel @Inject constructor(
                                     }.joinAll()
                                 }
                             }
-                            if (localFolders.isNotEmpty()) scanFoldersInternal(localFolders)
-                            if (smbFolders.isNotEmpty() && !isScanCancelled) scanFoldersInternal(smbFolders)
+                            val orderedFolderGroups = if (settings.prioritizeLocalScan) {
+                                listOf(localFolders, smbFolders)
+                            } else {
+                                listOf(smbFolders, localFolders)
+                            }
+                            for (folderGroup in orderedFolderGroups) {
+                                if (folderGroup.isNotEmpty() && !isScanCancelled) {
+                                    scanFoldersInternal(folderGroup)
+                                }
+                            }
                             if (foldersModified.isNotEmpty()) {
                                 val changedFolders = foldersModified.toList()
                                 viewModelScope.launch(Dispatchers.IO) {

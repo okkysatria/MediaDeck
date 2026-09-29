@@ -280,11 +280,12 @@ fun VideoPlayerScreen(
     LaunchedEffect(player, isPlayerPlayingState, showResumeDialog) {
         player?.playWhenReady = isPlayerPlayingState && !showResumeDialog
     }
-    DisposableEffect(movie) {
+    DisposableEffect(movie, settings.smbNetworkCachingMs) {
         val exoPlayer = buildExoPlayer(
             context = context,
             movie = movie,
             playbackSpeed = playbackSpeed,
+            smbBufferMs = settings.smbNetworkCachingMs,
             isSubtitleUriAccessible = { uri -> viewModel.isUriAccessible(context, uri) },
         )
         val listener = object : Player.Listener {
@@ -597,6 +598,7 @@ private fun buildExoPlayer(
     context: Context,
     movie: Movie,
     playbackSpeed: Float,
+    smbBufferMs: Int,
     isSubtitleUriAccessible: (String) -> Boolean,
 ): ExoPlayer {
     val isSmb = com.mediadeck.app.util.media.MediaUtils.isSmbUri(movie.uri)
@@ -613,10 +615,11 @@ private fun buildExoPlayer(
         .setUsage(C.USAGE_MEDIA)
         .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
         .build()
+    val smbMaxBufferMs = smbBufferMs.coerceIn(2_000, 30_000)
     val loadControl = DefaultLoadControl.Builder()
         .setBufferDurationsMs(
-            if (isSmb) PlayerDefaults.SMB_MIN_BUFFER_MS else PlayerDefaults.LOCAL_MIN_BUFFER_MS,
-            if (isSmb) PlayerDefaults.SMB_MAX_BUFFER_MS else PlayerDefaults.LOCAL_MAX_BUFFER_MS,
+            if (isSmb) minOf(PlayerDefaults.SMB_MIN_BUFFER_MS, smbMaxBufferMs) else PlayerDefaults.LOCAL_MIN_BUFFER_MS,
+            if (isSmb) smbMaxBufferMs else PlayerDefaults.LOCAL_MAX_BUFFER_MS,
             if (isSmb) 750 else PlayerDefaults.BUFFER_FOR_PLAYBACK_MS,
             if (isSmb) 2_000 else PlayerDefaults.BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS,
         )

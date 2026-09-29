@@ -116,8 +116,10 @@ object SmbConnectionManager {
     }
     private fun createBaseContext(settings: AppSettings): CIFSContext {
         val prop = Properties()
-        prop.setProperty("jcifs.client.minVersion", "SMB202")
-        prop.setProperty("jcifs.client.maxVersion", "SMB311")
+        val minVersion = if (settings.smbDisableSMB1 || settings.smbEnableSMB2) "SMB202" else "SMB1"
+        val maxVersion = if (settings.smbEnableSMB2) "SMB311" else minVersion
+        prop.setProperty("jcifs.client.minVersion", minVersion)
+        prop.setProperty("jcifs.client.maxVersion", maxVersion)
         prop.setProperty("jcifs.client.dfs.disabled", "true")
         prop.setProperty("jcifs.client.connTimeout", settings.smbConnTimeout.toString())
         prop.setProperty("jcifs.client.soTimeout", settings.smbSoTimeout.coerceAtLeast(500).toString())

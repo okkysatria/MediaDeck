@@ -258,20 +258,17 @@ class ComicViewModel @Inject constructor(
             _shuffledComics.value = null
         }
         viewModelScope.launch {
-            val settings = repository.getSettingsDirect()
-            repository.updateSettings(settings.copy(defaultComicSort = sort))
+            repository.updateSettings { it.copy(defaultComicSort = sort) }
         }
     }
     fun setLayoutMode(mode: String) {
         viewModelScope.launch {
-            val settings = repository.getSettingsDirect()
-            repository.updateSettings(settings.copy(layoutMode = mode))
+            repository.updateSettings { it.copy(layoutMode = mode) }
         }
     }
     fun setComicPageTransition(transition: String) {
         viewModelScope.launch {
-            val settings = repository.getSettingsDirect()
-            repository.updateSettings(settings.copy(comicPageTransition = transition))
+            repository.updateSettings { it.copy(comicPageTransition = transition) }
         }
     }
     fun toggleComicFavorite(comic: Comic) {

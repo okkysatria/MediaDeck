@@ -5,6 +5,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.net.toUri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -20,6 +25,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -133,10 +139,8 @@ fun ScanSection(
                         modifier = Modifier.weight(1f)
                     )
                     if (isScanActive) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(14.dp).padding(end = 8.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.primary,
+                        FolderScanIndicator(
+                            modifier = Modifier.size(16.dp).padding(end = 4.dp),
                         )
                     }
                     Icon(
@@ -615,10 +619,8 @@ private fun FolderGroup(
                     }
                     Spacer(Modifier.width(8.dp))
                     if (isActive) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.primary,
+                        FolderScanIndicator(
+                            modifier = Modifier.size(18.dp),
                         )
                         Spacer(Modifier.width(8.dp))
                     }
@@ -642,4 +644,20 @@ private fun FolderGroup(
             }
         }
     }
+}
+@Composable
+private fun FolderScanIndicator(modifier: Modifier = Modifier) {
+    val transition = rememberInfiniteTransition(label = "folderScanIndicator")
+    val rotation by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(durationMillis = 900, easing = LinearEasing)),
+        label = "folderScanRotation",
+    )
+    Icon(
+        imageVector = Icons.Default.Refresh,
+        contentDescription = t("Scanning", "Memindai"),
+        tint = MaterialTheme.colorScheme.primary,
+        modifier = modifier.rotate(rotation),
+    )
 }

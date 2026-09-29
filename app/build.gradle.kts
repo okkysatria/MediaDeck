@@ -128,11 +128,12 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
 }
 
 tasks.register<Copy>("copyDebugApkAsMediaDeck") {
+  dependsOn("packageDebug")
   from(layout.buildDirectory.file("outputs/apk/debug/app-debug.apk"))
-  into(layout.buildDirectory.dir("outputs/apk/debug"))
+  into(layout.buildDirectory.dir("outputs/apk/MediaDeck"))
   rename { "MediaDeck.apk" }
 }
 
-tasks.named("assembleDebug") {
+tasks.matching { it.name == "assembleDebug" }.configureEach {
   finalizedBy("copyDebugApkAsMediaDeck")
 }

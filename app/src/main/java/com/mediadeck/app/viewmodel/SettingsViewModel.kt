@@ -117,8 +117,7 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             settingsMutex.withLock {
                 try {
-                    val current = repository.getSettingsDirect()
-                    repository.updateSettings(transform(current))
+                    repository.updateSettings(transform)
                 } catch (e: Exception) {
                     Log.e("SettingsViewModel", "Failed to update settings", e)
                 }
@@ -242,8 +241,7 @@ class SettingsViewModel @Inject constructor(
             settingsMutex.withLock {
                 smbCredentialStore.savePassword(pass)
                 _smbPassword.value = pass
-                val current = repository.getSettingsDirect()
-                repository.updateSettings(
+                repository.updateSettings { current ->
                     current.copy(
                         smbHost = host,
                         smbShare = share,
@@ -257,7 +255,7 @@ class SettingsViewModel @Inject constructor(
                         smbSoTimeout = soTimeout,
                         smbIsGuest = isGuest,
                     )
-                )
+                }
             }
         }
     }
@@ -278,8 +276,7 @@ class SettingsViewModel @Inject constructor(
             settingsMutex.withLock {
                 smbCredentialStore.savePassword(pass)
                 _smbPassword.value = pass
-                val current = repository.getSettingsDirect()
-                repository.updateSettings(
+                repository.updateSettings { current ->
                     current.copy(
                         smbHost = host,
                         smbShare = share,
@@ -293,7 +290,7 @@ class SettingsViewModel @Inject constructor(
                         smbSoTimeout = soTimeout,
                         smbIsGuest = isGuest,
                     )
-                )
+                }
             }
             startBrowsingServer()
         }

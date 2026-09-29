@@ -61,7 +61,8 @@ object VideoThumbnailHelper {
     ) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
     }
-    private val localSemaphore = Semaphore(2)
+    private val localImageSemaphore = Semaphore(3)
+    private val localVideoSemaphore = Semaphore(2)
     private val smbSemaphore = Semaphore(5)
     private fun downscaleBitmap(src: Bitmap, maxDimension: Int): Bitmap {
         val w = src.width
@@ -195,10 +196,15 @@ object VideoThumbnailHelper {
                 }
             }
             val isSmb = MediaUtils.isSmbUri(uriString)
-            (if (isSmb) smbSemaphore else localSemaphore).withPermit {
+            val isImage = com.mediadeck.app.util.media.MediaUtils.isImageMime(context.contentResolver.getType(Uri.parse(uriString))) ||
+                com.mediadeck.app.util.media.MediaUtils.isImageExt(com.mediadeck.app.util.media.MediaUtils.getFileExt(uriString))
+            val generationSemaphore = when {
+                isSmb -> smbSemaphore
+                isImage -> localImageSemaphore
+                else -> localVideoSemaphore
+            }
+            generationSemaphore.withPermit {
                 yield()
-                val isImage = com.mediadeck.app.util.media.MediaUtils.isImageMime(context.contentResolver.getType(Uri.parse(uriString))) ||
-                               com.mediadeck.app.util.media.MediaUtils.isImageExt(com.mediadeck.app.util.media.MediaUtils.getFileExt(uriString))
                 val generatedRaw = if (isImage) {
                     generateImageThumbnail(context, uriString, isSmb, maxDimension, settings, onImageMetadata)
                 } else {
@@ -282,16 +288,20 @@ object VideoThumbnailHelper {
             } else {
                 val uri = Uri.parse(uriString)
                 val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                    BitmapFactory.decodeStream(inputStream, null, options)
+                context.contentResolver.openInputStream(uri)?.use { raw ->
+                    BufferedInputStream(raw, 1 shl 20).use { inputStream ->
+                        BitmapFactory.decodeStream(inputStream, null, options)
+                    }
                 }
                 if (options.outWidth > 0 && options.outHeight > 0) onImageMetadata?.invoke(options.outWidth, options.outHeight)
                 options.apply {
                     inJustDecodeBounds = false
                     inSampleSize = calculateInSampleSize(outWidth, outHeight, maxDimension, maxDimension)
                 }
-                context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                    BitmapFactory.decodeStream(inputStream, null, options)
+                context.contentResolver.openInputStream(uri)?.use { raw ->
+                    BufferedInputStream(raw, 1 shl 20).use { inputStream ->
+                        BitmapFactory.decodeStream(inputStream, null, options)
+                    }
                 }
             }
         } catch (e: Exception) {

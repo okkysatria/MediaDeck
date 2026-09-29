@@ -80,8 +80,8 @@ fun MoviesScreen(
     val selectedIds by viewModel.selectedMovieIds.collectAsState()
     val isGroupedByFolder by viewModel.isMovieGroupedByFolder.collectAsState()
     val selectedFolderName by viewModel.selectedMovieFolderName.collectAsState()
-    LaunchedEffect(viewModel, isGroupedByFolder) {
-        if (!isGroupedByFolder) viewModel.enqueueMissingThumbnails(context)
+    LaunchedEffect(viewModel) {
+        viewModel.enqueueMissingThumbnails(context)
     }
     LaunchedEffect(viewModel, selectedFolderName) {
         selectedFolderName?.let { viewModel.onFolderVisited(context, it) }

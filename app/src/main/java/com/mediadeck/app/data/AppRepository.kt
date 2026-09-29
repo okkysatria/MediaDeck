@@ -13,6 +13,8 @@ import com.mediadeck.app.data.settings.SettingsDao
 import com.mediadeck.app.util.media.VideoThumbnailHelper
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 class AppRepository(
     private val comicDao: ComicDao,
@@ -20,6 +22,7 @@ class AppRepository(
     private val settingsDao: SettingsDao,
     private val movieDao: MovieDao,
 ) {
+    private val settingsMutex = Mutex()
     data class FolderRemovalSummary(val mediaCount: Int)
     private fun deletePhysicalThumbnail(context: Context, mediaId: Long) {
         if (mediaId <= 0L) return
@@ -112,7 +115,12 @@ class AppRepository(
     }
     val appSettings: Flow<AppSettings> = settingsDao.getSettingsFlow().map { it ?: AppSettings() }
     suspend fun getSettingsDirect(): AppSettings = settingsDao.getSettingsDirect() ?: AppSettings()
-    suspend fun updateSettings(settings: AppSettings) = settingsDao.insertOrUpdateSettings(settings)
+    suspend fun updateSettings(transform: (AppSettings) -> AppSettings) {
+        settingsMutex.withLock {
+            val current = settingsDao.getSettingsDirect() ?: AppSettings()
+            settingsDao.insertOrUpdateSettings(transform(current))
+        }
+    }
     suspend fun getScannedFolders(): List<ScannedFolder> = settingsDao.getAllScannedFolders()
     suspend fun insertScannedFolder(folder: ScannedFolder) = settingsDao.insertScannedFolder(folder)
     suspend fun insertScannedFolders(folders: List<ScannedFolder>) {

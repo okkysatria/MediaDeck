@@ -1,7 +1,4 @@
 package com.mediadeck.app.ui.screens
-import android.content.Context
-import android.content.ContextWrapper
-import android.content.pm.ActivityInfo
 import android.net.Uri
 import coil3.request.crossfade
 import androidx.activity.compose.BackHandler
@@ -50,7 +47,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.MenuBook
-import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
@@ -60,6 +56,8 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FormatLineSpacing
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -87,6 +85,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -114,7 +113,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -148,8 +147,6 @@ fun ComicReaderScreen(
     val settings by viewModel.appSettings.collectAsState()
     val comicLoadError by viewModel.comicLoadError.collectAsState()
     val context = LocalContext.current
-    val configuration = LocalConfiguration.current
-    val activity = remember(context) { context.findActivity() }
     DisposableEffect(Unit) {
         ScannerStateManager.setMediaActive(true)
         onDispose {
@@ -172,24 +169,6 @@ fun ComicReaderScreen(
         return
     }
     var readerMode by remember { mutableStateOf(settings.defaultReaderMode) }
-    val initialOrientation = remember(activity) {
-        activity?.requestedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-    }
-    val isCompactDevice = configuration.smallestScreenWidthDp < 600
-    LaunchedEffect(activity, readerMode, isCompactDevice) {
-        if (activity != null) {
-            activity.requestedOrientation = if (readerMode == "horizontal_double" && isCompactDevice) {
-                ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-            } else {
-                initialOrientation
-            }
-        }
-    }
-    DisposableEffect(activity) {
-        onDispose {
-            if (activity != null) activity.requestedOrientation = initialOrientation
-        }
-    }
     var pageSortBy by remember { mutableStateOf("filename") }
     var reversePages by remember { mutableStateOf(false) }
     var showBars by remember { mutableStateOf(!settings.autoHideReaderUi) }
@@ -348,24 +327,34 @@ fun ComicReaderScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { activeComic?.let { viewModel.toggleComicReadLater(it) } }) {
-                        Icon(
-                            if (activeComic?.isReadLater == true) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                            null, tint = if (activeComic?.isReadLater == true) MaterialTheme.colorScheme.primary else Color.White,
-                        )
-                    }
-                    IconButton(onClick = { activeComic?.let { viewModel.toggleComicFavorite(it) } }) {
-                        Icon(
-                            if (activeComic?.isFavorite == true) Icons.Filled.Favorite else Icons.Default.FavoriteBorder,
-                            null, tint = if (activeComic?.isFavorite == true) Color.Red else Color.White,
-                        )
-                    }
                     var showSortMenu by remember { mutableStateOf(false) }
                     Box {
                         IconButton(onClick = { showSortMenu = true }) {
-                            Icon(Icons.AutoMirrored.Filled.Sort, null, tint = Color.White)
+                            Icon(Icons.Default.MoreVert, contentDescription = t("Reader options", "Opsi pembaca"), tint = Color.White)
                         }
                         DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text(if (activeComic?.isReadLater == true) t("Remove from Read Later", "Hapus dari Nanti Dibaca") else t("Read Later", "Nanti Dibaca")) },
+                                leadingIcon = {
+                                    Icon(
+                                        if (activeComic?.isReadLater == true) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                                        null,
+                                    )
+                                },
+                                onClick = { activeComic?.let { viewModel.toggleComicReadLater(it) }; showSortMenu = false },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(if (activeComic?.isFavorite == true) t("Remove Favorite", "Hapus Favorit") else t("Add to Favorites", "Tambah ke Favorit")) },
+                                leadingIcon = {
+                                    Icon(
+                                        if (activeComic?.isFavorite == true) Icons.Filled.Favorite else Icons.Default.FavoriteBorder,
+                                        null,
+                                        tint = if (activeComic?.isFavorite == true) Color.Red else MaterialTheme.colorScheme.onSurface,
+                                    )
+                                },
+                                onClick = { activeComic?.let { viewModel.toggleComicFavorite(it) }; showSortMenu = false },
+                            )
+                            HorizontalDivider()
                             DropdownMenuItem(
                                 text = { Text(t("Filename", "Nama File")) },
                                 leadingIcon = { RadioButton(selected = pageSortBy == "filename", onClick = null) },
@@ -383,11 +372,22 @@ fun ComicReaderScreen(
                                 onClick = { reversePages = !reversePages; showSortMenu = false },
                             )
                             HorizontalDivider()
+                            listOf("curl" to "Page Curl", "slide" to "Slide", "fade" to "Fade").forEach { (value, label) ->
+                                DropdownMenuItem(
+                                    text = { Text(t(label, when (value) { "curl" -> "Page Curl"; "slide" -> "Geser"; else -> "Memudar" })) },
+                                    leadingIcon = { RadioButton(selected = settings.comicPageTransition == value, onClick = null) },
+                                    onClick = { viewModel.setComicPageTransition(value); showSortMenu = false },
+                                )
+                            }
+                            HorizontalDivider()
                             DropdownMenuItem(
                                 text = { Text(t("Reset Progress", "Reset Progres"), color = MaterialTheme.colorScheme.error) },
                                 leadingIcon = { Icon(Icons.Default.History, null, tint = MaterialTheme.colorScheme.error) },
                                 onClick = {
                                     activeComic?.let { viewModel.clearComicHistory(it) }
+                                    pendingVolumeTarget = null
+                                    animateJumpToPage = false
+                                    jumpToPage = processedPages.firstOrNull()?.pageIndex
                                     showSortMenu = false
                                 },
                             )
@@ -515,6 +515,7 @@ fun VerticalReader(
     var scale by remember { mutableFloatStateOf(1f) }
     var offsetX by remember { mutableFloatStateOf(0f) }
     var isInitialPositionRestored by remember(pages) { mutableStateOf(false) }
+    val density = LocalDensity.current
     LaunchedEffect(pages) {
         if (pages.isEmpty()) return@LaunchedEffect
         if (initialPage > 0 || initialOffset > 0) {
@@ -527,6 +528,8 @@ fun VerticalReader(
         jumpToPage?.let {
             val idx = pages.indexOfFirst { p -> p.pageIndex == it }
             if (idx >= 0) {
+                scale = 1f
+                offsetX = 0f
                 listState.animateScrollToItem(idx)
                 onProgressUpdate(pages[idx].pageIndex, 0)
             }
@@ -544,9 +547,14 @@ fun VerticalReader(
         val isLandscape = maxWidth > maxHeight
         val maxPageWidth = minOf(maxWidth, 960.dp, if (isLandscape) maxHeight * 1.6f else 960.dp)
         val width = this.constraints.maxWidth.toFloat()
-        val state = rememberTransformableState { zoomChange, panChange, _ ->
-            scale = (scale * zoomChange).coerceIn(1f, 5f)
-            val maxX = (width * (scale - 1) / 2f).coerceAtLeast(0f)
+        val pageWidthPx = with(density) { maxPageWidth.toPx() }.coerceAtMost(width)
+        fun horizontalPanLimit(currentScale: Float): Float =
+            ((pageWidthPx * currentScale - width) / 2f).coerceAtLeast(0f)
+        val state = rememberTransformableState { _, zoomChange, panChange, _ ->
+            val oldScale = scale
+            val newScale = (oldScale * zoomChange).coerceIn(1f, 5f)
+            scale = newScale
+            val maxX = horizontalPanLimit(newScale)
             offsetX = (offsetX + panChange.x).coerceIn(-maxX, maxX)
             if (scale > 1.05f && panChange.y != 0f) {
                 coroutineScope.launch {
@@ -561,12 +569,15 @@ fun VerticalReader(
                 .pointerInput(Unit) {
                     detectTapGestures(
                         onTap = { onTap() },
-                        onDoubleTap = {
+                        onDoubleTap = { tapOffset ->
                             if (scale > 1.05f) {
                                 scale = 1f
                                 offsetX = 0f
                             } else {
                                 scale = 2.5f
+                                val maxX = horizontalPanLimit(scale)
+                                offsetX = ((tapOffset.x - width / 2f) * (1f - scale))
+                                    .coerceIn(-maxX, maxX)
                             }
                         },
                     )
@@ -585,18 +596,47 @@ fun VerticalReader(
                 userScrollEnabled = scale <= 1.05f,
             ) {
                 items(pages, key = { it.pageIndex }) { page ->
+                    val context = LocalContext.current
+                    var retryCount by remember(page.pageUri) { mutableIntStateOf(0) }
+                    val imageRequest = remember(page.pageUri, retryCount, context) {
+                        ImageRequest.Builder(context)
+                            .data(Uri.parse(page.pageUri))
+                            .crossfade(false)
+                            .build()
+                    }
                     Box(
                         modifier = Modifier.fillMaxWidth(),
                         contentAlignment = Alignment.TopCenter,
                     ) {
-                        AsyncImage(
-                            model = ImageRequest.Builder(LocalContext.current)
-                                .data(Uri.parse(page.pageUri))
-                                .crossfade(false)
-                                .build(),
+                        SubcomposeAsyncImage(
+                            model = imageRequest,
                             contentDescription = null,
                             modifier = Modifier.widthIn(max = maxPageWidth).fillMaxWidth(),
                             contentScale = ContentScale.FillWidth,
+                            loading = {
+                                Box(
+                                    Modifier.fillMaxWidth().aspectRatio(0.7f).background(Color.Black),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                                }
+                            },
+                            error = {
+                                Box(
+                                    Modifier.fillMaxWidth().aspectRatio(0.7f).background(Color.Black),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Icon(Icons.Default.CloudOff, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                                        Text(t("Page failed to load", "Halaman gagal dimuat"), color = Color.White, fontSize = 12.sp)
+                                        Button(onClick = { retryCount++ }) {
+                                            Icon(Icons.Default.Refresh, contentDescription = null)
+                                            Spacer(Modifier.width(8.dp))
+                                            Text(t("Retry", "Coba lagi"))
+                                        }
+                                    }
+                                }
+                            },
                         )
                     }
                     if (settings.verticalPageGap != "none") {
@@ -868,6 +908,7 @@ private fun CurlComicPage(
     page: ComicPage?,
     modifier: Modifier = Modifier,
     imageAlignment: Alignment = Alignment.Center,
+    imageTranslationX: Float = 0f,
 ) {
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         if (page != null) {
@@ -887,7 +928,7 @@ private fun CurlComicPage(
                         .graphicsLayer(
                             scaleX = scale,
                             scaleY = scale,
-                            translationX = offset.x,
+                            translationX = offset.x + imageTranslationX,
                             translationY = offset.y,
                         ),
                     contentScale = ContentScale.Fit,
@@ -1110,20 +1151,6 @@ fun HorizontalDoubleReader(
     onJumpHandled: () -> Unit,
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        if (maxWidth < 600.dp && maxWidth <= maxHeight) {
-            HorizontalSingleReader(
-                pages = pages,
-                initialPage = initialPage,
-                innerPadding = innerPadding,
-                onProgressUpdate = onProgressUpdate,
-                onTap = onTap,
-                jumpToPage = jumpToPage,
-                pageTransition = pageTransition,
-                animateJumpToPage = animateJumpToPage,
-                onJumpHandled = onJumpHandled,
-            )
-            return@BoxWithConstraints
-        }
         val initialSlot = remember(pages, initialPage) {
             pages.indexOfFirst { it.pageIndex == initialPage }.coerceAtLeast(0)
         }
@@ -1240,6 +1267,10 @@ fun HorizontalDoubleReader(
         val pageWidthPx = with(density) { (contentWidth / 2).toPx() }.coerceAtLeast(1f)
         val pageHeightPx = with(density) { contentHeight.toPx() }.coerceAtLeast(1f)
         val gesturePainter = rememberCurlPagePainter(turningFront)
+        val currentLeftPainter = rememberCurlPagePainter(currentLeftPage)
+        val currentRightPainter = rememberCurlPagePainter(currentRightPage)
+        val destinationLeftPainter = rememberCurlPagePainter(destinationLeftPage)
+        val destinationRightPainter = rememberCurlPagePainter(destinationRightPage)
         val sourceSize = gesturePainter?.intrinsicSize
         val pageAspect = pageWidthPx / pageHeightPx
         val imageWidthFraction = if (
@@ -1251,12 +1282,40 @@ fun HorizontalDoubleReader(
             1f
         }
         val dragWidthPx = (pageWidthPx * imageWidthFraction).coerceAtLeast(1f)
-        val currentDragWidthPx by rememberUpdatedState(dragWidthPx)
+        fun fittedImageWidth(page: ComicPage?, painter: Painter?): Float {
+            if (page == null) return 0f
+            val intrinsic = painter?.intrinsicSize
+            if (intrinsic == null || !intrinsic.width.isFinite() || !intrinsic.height.isFinite() || intrinsic.width <= 0f || intrinsic.height <= 0f) {
+                return pageWidthPx
+            }
+            return intrinsic.width * minOf(pageWidthPx / intrinsic.width, pageHeightPx / intrinsic.height)
+        }
+        fun spreadImageBounds(leftWidth: Float, rightWidth: Float): Pair<Float, Float> =
+            (pageWidthPx - leftWidth) to (pageWidthPx + rightWidth)
+        val (currentImageLeft, currentImageRight) = spreadImageBounds(
+            fittedImageWidth(currentLeftPage, currentLeftPainter),
+            fittedImageWidth(currentRightPage, currentRightPainter),
+        )
+        val (destinationImageLeft, destinationImageRight) = spreadImageBounds(
+            fittedImageWidth(destinationLeftPage, destinationLeftPainter),
+            fittedImageWidth(destinationRightPage, destinationRightPainter),
+        )
+        val viewportWidth = pageWidthPx * 2f
+        val slideDragWidthPx = maxOf(
+            currentImageRight,
+            viewportWidth - currentImageLeft,
+            viewportWidth - destinationImageLeft,
+            destinationImageRight,
+        ).coerceAtLeast(1f)
+        val currentDragWidthPx by rememberUpdatedState(
+            if (pageTransition == "slide") slideDragWidthPx else dragWidthPx,
+        )
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
                 .background(Color.Black)
+                .clipToBounds()
                 .pointerInput(spreadIndex, pages.size) {
                     detectTapGestures { position ->
                         val fraction = position.x / size.width
@@ -1339,15 +1398,20 @@ fun HorizontalDoubleReader(
                     )
                 },
         ) {
-            if (turningDirection != 0 && pageTransition != "curl") {
-                val isSlide = pageTransition == "slide"
+            if (turningDirection != 0 && pageTransition == "slide") {
+                val currentSlideDistance = if (turningDirection > 0) {
+                    currentImageRight
+                } else {
+                    viewportWidth - currentImageLeft
+                }
+                val destinationSlideDistance = if (turningDirection > 0) {
+                    viewportWidth - destinationImageLeft
+                } else {
+                    destinationImageRight
+                }
                 Row(
                     Modifier.fillMaxSize().graphicsLayer {
-                        if (isSlide) {
-                            translationX = -turningDirection * size.width * pageProgress
-                        } else {
-                            alpha = 1f - pageProgress
-                        }
+                        translationX = -turningDirection * currentSlideDistance * pageProgress
                     },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -1364,11 +1428,42 @@ fun HorizontalDoubleReader(
                 }
                 Row(
                     Modifier.fillMaxSize().graphicsLayer {
-                        if (isSlide) {
-                            translationX = turningDirection * size.width * (1f - pageProgress)
-                        } else {
-                            alpha = pageProgress
-                        }
+                        translationX = turningDirection * destinationSlideDistance * (1f - pageProgress)
+                    },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CurlComicPage(
+                        page = destinationLeftPage,
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        imageAlignment = Alignment.CenterEnd,
+                    )
+                    CurlComicPage(
+                        page = destinationRightPage,
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        imageAlignment = Alignment.CenterStart,
+                    )
+                }
+            } else if (turningDirection != 0 && pageTransition != "curl") {
+                Row(
+                    Modifier.fillMaxSize().graphicsLayer {
+                        alpha = 1f - pageProgress
+                    },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CurlComicPage(
+                        page = currentLeftPage,
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        imageAlignment = Alignment.CenterEnd,
+                    )
+                    CurlComicPage(
+                        page = currentRightPage,
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        imageAlignment = Alignment.CenterStart,
+                    )
+                }
+                Row(
+                    Modifier.fillMaxSize().graphicsLayer {
+                        alpha = pageProgress
                     },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -1415,8 +1510,3 @@ private fun leftPageSlotForSpread(spreadIndex: Int): Int =
     if (spreadIndex == 0) -1 else spreadIndex * 2 - 1
 private fun rightPageSlotForSpread(spreadIndex: Int): Int =
     if (spreadIndex == 0) 0 else spreadIndex * 2
-private tailrec fun Context.findActivity(): android.app.Activity? = when (this) {
-    is android.app.Activity -> this
-    is ContextWrapper -> baseContext.findActivity()
-    else -> null
-}

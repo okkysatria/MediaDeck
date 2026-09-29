@@ -213,20 +213,17 @@ class GalleryViewModel @Inject constructor(
             _shuffledItems.value = null
         }
         viewModelScope.launch {
-            val settings = repository.getSettingsDirect()
-            repository.updateSettings(settings.copy(defaultGallerySort = sort))
+            repository.updateSettings { it.copy(defaultGallerySort = sort) }
         }
     }
     fun setGalleryGridType(type: String) {
         viewModelScope.launch {
-            val settings = repository.getSettingsDirect()
-            repository.updateSettings(settings.copy(galleryGridType = type))
+            repository.updateSettings { it.copy(galleryGridType = type) }
         }
     }
     fun setLayoutMode(mode: String) {
         viewModelScope.launch {
-            val settings = repository.getSettingsDirect()
-            repository.updateSettings(settings.copy(layoutMode = mode))
+            repository.updateSettings { it.copy(layoutMode = mode) }
         }
     }
     fun toggleGalleryFavorite(item: GalleryItem) {
