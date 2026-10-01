@@ -8,9 +8,12 @@ import org.codelibs.jcifs.smb.context.BaseContext
 import org.codelibs.jcifs.smb.impl.NtlmPasswordAuthenticator
 import org.codelibs.jcifs.smb.impl.SmbAuthException
 import org.codelibs.jcifs.smb.impl.SmbFile
+import org.codelibs.jcifs.smb.SmbRandomAccess
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.util.Properties
 import dagger.hilt.EntryPoint
@@ -25,6 +28,7 @@ object SmbConnectionManager {
         fun smbCredentialStore(): SmbCredentialStore
     }
     private val mutex = Mutex()
+    private val randomAccessOpenSemaphore = Semaphore(2)
     @Volatile private var cachedContext: CIFSContext? = null
     @Volatile private var lastSettingsHash: Int = 0
     private var successfulAuthType: Int = -1
@@ -150,4 +154,9 @@ object SmbConnectionManager {
             }
         }
     }
+
+    suspend fun openRandomAccess(file: SmbFile): SmbRandomAccess =
+        randomAccessOpenSemaphore.withPermit {
+            withContext(Dispatchers.IO) { file.openRandomAccess("r") }
+        }
 }

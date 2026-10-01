@@ -6,6 +6,8 @@ import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.media.AudioManager
 import android.net.Uri
+import android.provider.OpenableColumns
+import android.util.TypedValue
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -45,6 +47,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
@@ -95,7 +98,9 @@ import com.mediadeck.app.util.smb.SmbDataSource
 import com.mediadeck.app.util.scan.ScannerStateManager
 import com.mediadeck.app.viewmodel.MovieViewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -106,7 +111,11 @@ data class TrackInfo(
     val trackIndex: Int,
     val language: String,
     val label: String?,
+    val isSelected: Boolean = false,
+    val details: String? = null,
+    val externalSubtitleUri: String? = null,
 )
+private data class SubtitleCue(val startMs: Long, val endMs: Long, val text: String)
 private object PlayerDefaults {
     const val CONTROLS_AUTO_HIDE_MS = 4000L
     const val POSITION_POLL_INTERVAL_MS = 500L
@@ -142,6 +151,7 @@ fun VideoPlayerScreen(
         }
     }
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
+    val latestPlayer = rememberUpdatedState(player)
     var isPlaying by remember { mutableStateOf(false) }
     var playbackState by remember { mutableIntStateOf(Player.STATE_IDLE) }
     var duration by remember { mutableLongStateOf(0L) }
@@ -189,10 +199,16 @@ fun VideoPlayerScreen(
     var subtitleTracks by remember { mutableStateOf<List<TrackInfo>>(emptyList()) }
     var showAudioDialog by remember { mutableStateOf(false) }
     var showSubtitleDialog by remember { mutableStateOf(false) }
+    var showPlayerMenu by remember { mutableStateOf(false) }
     var selectedAudioTrack by remember { mutableIntStateOf(movie.audioTrackIndex) }
     var selectedSubtitleTrack by remember { mutableIntStateOf(movie.subtitleTrackIndex) }
+    var activeSubtitleUri by remember { mutableStateOf(movie.subtitleUri) }
+    val latestAudioTrack by rememberUpdatedState(selectedAudioTrack)
+    val latestSubtitleTrack by rememberUpdatedState(selectedSubtitleTrack)
     var subtitleSize by remember { mutableFloatStateOf(16f) }
-    var subtitleDelay by remember { mutableIntStateOf(0) }
+    var subtitleDelayMs by remember { mutableLongStateOf(0L) }
+    var subtitleCues by remember { mutableStateOf<List<SubtitleCue>>(emptyList()) }
+    var delayedSubtitleText by remember { mutableStateOf<String?>(null) }
     var isDraggingSlider by remember { mutableStateOf(false) }
     var dragPosition by remember { mutableLongStateOf(0L) }
     val moviesList by viewModel.allMovies.collectAsState()
@@ -203,25 +219,73 @@ fun VideoPlayerScreen(
     val currentMovieIndex = remember(videoPlaylist, movie) {
         videoPlaylist.indexOfFirst { it.id == movie.id }
     }
+    val latestPlaybackMode by rememberUpdatedState(playbackMode)
+    val latestVideoPlaylist by rememberUpdatedState(videoPlaylist)
+    val latestCurrentMovieIndex by rememberUpdatedState(currentMovieIndex)
     val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     val maxVolume = remember { audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }
+    LaunchedEffect(movie.id) {
+        selectedAudioTrack = movie.audioTrackIndex
+        selectedSubtitleTrack = movie.subtitleTrackIndex
+        activeSubtitleUri = movie.subtitleUri
+        playbackSpeed = if (movie.playbackSpeed != 1.0f) movie.playbackSpeed else settings.defaultVideoSpeed
+        orientationMode = if (movie.orientation != 0) movie.orientation else settings.defaultVideoOrientation
+        zoomMode = if (movie.zoomMode != 0) movie.zoomMode else settings.defaultVideoZoomMode
+        showResumeDialog = movie.lastPlayedPosition > PlayerDefaults.RESUME_PROMPT_THRESHOLD_MS
+        currentPosition = 0L
+        duration = 0L
+        isPlaying = false
+        playbackState = Player.STATE_IDLE
+        audioTracks = emptyList()
+        subtitleTracks = emptyList()
+        showAudioDialog = false
+        showSubtitleDialog = false
+        subtitleDelayMs = 0L
+    }
     fun saveProgress(position: Long = player?.currentPosition ?: 0L) {
         viewModel.updateMovieSettings(
             movie = movie,
             position = position,
             speed = playbackSpeed,
-            subtitleUri = movie.subtitleUri,
+            subtitleUri = activeSubtitleUri,
             audioIdx = selectedAudioTrack,
             subIdx = selectedSubtitleTrack,
             orientation = orientationMode,
             zoomMode = zoomMode,
         )
     }
+    val latestSaveProgress = rememberUpdatedState<(Long) -> Unit> { position -> saveProgress(position) }
+    val selectedSubtitleInfo = subtitleTracks.getOrNull(selectedSubtitleTrack)
+    val isExternalSubtitleSelected = selectedSubtitleInfo?.externalSubtitleUri != null
+    LaunchedEffect(activeSubtitleUri) {
+        subtitleCues = activeSubtitleUri?.let { uri ->
+            withContext(Dispatchers.IO) { loadSubtitleCues(context, Uri.parse(uri)) }
+        }.orEmpty()
+    }
+    LaunchedEffect(player, subtitleCues, subtitleDelayMs, isExternalSubtitleSelected, isPlaying, currentPosition) {
+        if (player != null && subtitleDelayMs != 0L && isExternalSubtitleSelected && subtitleCues.isNotEmpty()) {
+            fun updateSubtitle() {
+                val subtitlePosition = (player?.currentPosition ?: 0L) - subtitleDelayMs
+                delayedSubtitleText = findSubtitleCue(subtitleCues, subtitlePosition)?.text
+            }
+            if (isPlaying) {
+                while (true) {
+                    updateSubtitle()
+                    delay(100)
+                }
+            } else {
+                updateSubtitle()
+            }
+        } else delayedSubtitleText = null
+    }
+    val canAdjustSubtitleDelay = isExternalSubtitleSelected && subtitleCues.isNotEmpty()
     val subtitlePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
     ) { uri: Uri? ->
         viewModel.setIsPickingFile(false)
         uri?.let { pickedUri ->
+            activeSubtitleUri = pickedUri.toString()
+            selectedSubtitleTrack = -1
             try {
                 context.contentResolver.takePersistableUriPermission(pickedUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             } catch (e: Exception) {
@@ -229,16 +293,22 @@ fun VideoPlayerScreen(
             }
             player?.currentMediaItem?.let { currentItem ->
                 val subtitleConfig = MediaItem.SubtitleConfiguration.Builder(pickedUri)
-                    .setMimeType(getMimeType(pickedUri))
+                    .setMimeType(getMimeType(context, pickedUri))
+                    .setLabel(getDocumentDisplayName(context, pickedUri).substringBeforeLast('.'))
                     .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
                     .build()
                 val newItem = currentItem.buildUpon()
                     .setSubtitleConfigurations(listOf(subtitleConfig))
                     .build()
                 val resumePosition = player?.currentPosition ?: 0L
-                player?.setMediaItem(newItem, false)
-                player?.seekTo(resumePosition)
-                player?.prepare()
+                player?.let { currentPlayer ->
+                    currentPlayer.trackSelectionParameters = currentPlayer.trackSelectionParameters.buildUpon()
+                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                        .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                        .build()
+                    currentPlayer.setMediaItem(newItem, resumePosition)
+                    currentPlayer.prepare()
+                }
             }
             viewModel.updateMovieSettings(
                 movie = movie,
@@ -259,7 +329,9 @@ fun VideoPlayerScreen(
             showController = false
         }
     }
-    BackHandler { onClose() }
+    LaunchedEffect(showController, isInPip) {
+        if (!showController || isInPip) showPlayerMenu = false
+    }
     LaunchedEffect(orientationMode) {
         activity?.requestedOrientation = when (orientationMode) {
             1 -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
@@ -271,7 +343,7 @@ fun VideoPlayerScreen(
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP) {
-                player?.pause()
+                latestPlayer.value?.pause()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -280,7 +352,17 @@ fun VideoPlayerScreen(
     LaunchedEffect(player, isPlayerPlayingState, showResumeDialog) {
         player?.playWhenReady = isPlayerPlayingState && !showResumeDialog
     }
-    DisposableEffect(movie, settings.smbNetworkCachingMs) {
+    LaunchedEffect(player, playbackSpeed) {
+        player?.setPlaybackSpeed(playbackSpeed)
+    }
+    LaunchedEffect(player, playbackMode, videoPlaylist.size) {
+        player?.repeatMode = when {
+            playbackMode == PlaybackMode.ONE -> Player.REPEAT_MODE_ONE
+            playbackMode == PlaybackMode.ALL && videoPlaylist.size <= 1 -> Player.REPEAT_MODE_ONE
+            else -> Player.REPEAT_MODE_OFF
+        }
+    }
+    DisposableEffect(movie.id, movie.uri) {
         val exoPlayer = buildExoPlayer(
             context = context,
             movie = movie,
@@ -300,24 +382,27 @@ fun VideoPlayerScreen(
                 when (state) {
                     Player.STATE_READY -> {
                         duration = exoPlayer.duration
-                        val (audios, subs) = exoPlayer.currentTracks.toTrackLists()
+                        val externalSubtitle = exoPlayer.currentMediaItem?.localConfiguration?.subtitleConfigurations?.lastOrNull()
+                        val (audios, subs) = exoPlayer.currentTracks.toTrackLists(
+                            externalSubtitle?.uri?.toString(),
+                            externalSubtitle?.label,
+                        )
                         audioTracks = audios
                         subtitleTracks = subs
-                        applyTrackOverride(exoPlayer, exoPlayer.currentTracks, audios, selectedAudioTrack)
-                        applyTrackOverride(exoPlayer, exoPlayer.currentTracks, subs, selectedSubtitleTrack)
-                    }
-                    Player.STATE_ENDED -> when (playbackMode) {
-                        PlaybackMode.ONE -> {
-                            exoPlayer.seekTo(0)
-                            exoPlayer.play()
+                        applyTrackOverride(exoPlayer, exoPlayer.currentTracks, audios, latestAudioTrack, C.TRACK_TYPE_AUDIO)
+                        applyTrackOverride(exoPlayer, exoPlayer.currentTracks, subs, latestSubtitleTrack, C.TRACK_TYPE_TEXT)
+                        if (latestSubtitleTrack < 0) {
+                            val activeSubtitle = subs.indexOfFirst { it.isSelected }
+                            if (activeSubtitle >= 0) selectedSubtitleTrack = activeSubtitle
                         }
+                    }
+                    Player.STATE_ENDED -> when (latestPlaybackMode) {
+                        PlaybackMode.ONE -> Unit
                         PlaybackMode.ALL -> {
-                            if (videoPlaylist.size > 1) {
-                                val nextIndex = (currentMovieIndex + 1) % videoPlaylist.size
-                                viewModel.openMovie(videoPlaylist[nextIndex])
-                            } else {
-                                exoPlayer.seekTo(0)
-                                exoPlayer.play()
+                            val playlist = latestVideoPlaylist
+                            if (playlist.size > 1) {
+                                val nextIndex = (latestCurrentMovieIndex + 1) % playlist.size
+                                viewModel.openMovie(playlist[nextIndex])
                             }
                         }
                         PlaybackMode.OFF -> Unit 
@@ -329,7 +414,7 @@ fun VideoPlayerScreen(
         player = exoPlayer
         onDispose {
             player?.let {
-                saveProgress(it.currentPosition)
+                latestSaveProgress.value(it.currentPosition)
                 it.removeListener(listener)
                 it.release()
             }
@@ -342,10 +427,12 @@ fun VideoPlayerScreen(
             delay(PlayerDefaults.POSITION_POLL_INTERVAL_MS.milliseconds)
         }
     }
-    LaunchedEffect(showController, isPlaying, isLocked) {
-        if (showController && isPlaying && !isLocked) {
+    LaunchedEffect(showController, isPlaying, isLocked, showPlayerMenu, showAudioDialog, showSubtitleDialog) {
+        if (showController && isPlaying && !isLocked && !showPlayerMenu && !showAudioDialog && !showSubtitleDialog) {
             delay(PlayerDefaults.CONTROLS_AUTO_HIDE_MS.milliseconds)
-            showController = false
+            if (showController && isPlaying && !isLocked && !showPlayerMenu && !showAudioDialog && !showSubtitleDialog) {
+                showController = false
+            }
         }
     }
     LaunchedEffect(isLocked, showUnlockButton) {
@@ -362,60 +449,69 @@ fun VideoPlayerScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
-            .playerTapGestures(
-                isLocked = isLocked,
-                skipIntervalSeconds = settings.videoSkipInterval,
-                onToggleController = {
-                    if (isLocked) {
-                        showUnlockButton = !showUnlockButton
-                    } else {
-                        showController = !showController
-                    }
-                },
-                onDoubleTapSeek = { deltaSeconds, isLeft ->
-                    scope.launch {
-                        player?.let { p ->
-                            doubleTapDelta += if (isLeft) -settings.videoSkipInterval else settings.videoSkipInterval
-                            gestureType = if (isLeft) GestureType.DOUBLE_TAP_LEFT else GestureType.DOUBLE_TAP_RIGHT
-                            val newPosition = (p.currentPosition + deltaSeconds * 1000L).coerceIn(0L, duration)
-                            p.seekTo(newPosition)
-                            currentPosition = newPosition
-                            delay(PlayerDefaults.GESTURE_INDICATOR_VISIBLE_MS.milliseconds)
-                            doubleTapDelta = 0
-                            gestureType = GestureType.NONE
-                        }
-                    }
-                },
-            )
-            .playerDragGestures(
-                isLocked = isLocked,
-                activity = activity,
-                audioManager = audioManager,
-                maxVolume = maxVolume,
-                currentPositionMs = { player?.currentPosition ?: 0L },
-                durationMs = { duration },
-                onGestureTypeChange = { gestureType = it },
-                onBrightnessChange = { gestureBrightnessVal = it },
-                onVolumeChange = { gestureVolumeVal = it },
-                onSeekPreview = { seekTimeMs, deltaSeconds ->
-                    gestureSeekTime = seekTimeMs
-                    gestureSeekDelta = deltaSeconds
-                    currentPosition = seekTimeMs
-                },
-                onSeekCommit = {
-                    player?.seekTo(gestureSeekTime)
-                    currentPosition = gestureSeekTime
-                },
-                onSeekCancel = {
-                    gestureSeekDelta = 0
-                    currentPosition = player?.currentPosition ?: currentPosition
-                },
-            ),
+            .background(Color.Black),
     ) {
         player?.let { p ->
-            PlayerSurface(player = p, zoomMode = zoomMode)
+            PlayerSurface(
+                player = p,
+                zoomMode = zoomMode,
+                subtitleSize = subtitleSize,
+                hideNativeSubtitles = subtitleDelayMs != 0L && isExternalSubtitleSelected && subtitleCues.isNotEmpty(),
+            )
         }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .playerTapGestures(
+                    isLocked = isLocked,
+                    skipIntervalSeconds = settings.videoSkipInterval,
+                    onToggleController = {
+                        if (isLocked) {
+                            showUnlockButton = !showUnlockButton
+                        } else {
+                            showController = !showController
+                        }
+                    },
+                    onDoubleTapSeek = { deltaSeconds, isLeft ->
+                        scope.launch {
+                            player?.let { p ->
+                                doubleTapDelta += if (isLeft) -settings.videoSkipInterval else settings.videoSkipInterval
+                                gestureType = if (isLeft) GestureType.DOUBLE_TAP_LEFT else GestureType.DOUBLE_TAP_RIGHT
+                                val newPosition = (p.currentPosition + deltaSeconds * 1000L).coerceIn(0L, duration)
+                                p.seekTo(newPosition)
+                                currentPosition = newPosition
+                                delay(PlayerDefaults.GESTURE_INDICATOR_VISIBLE_MS.milliseconds)
+                                doubleTapDelta = 0
+                                gestureType = GestureType.NONE
+                            }
+                        }
+                    },
+                )
+                .playerDragGestures(
+                    isLocked = isLocked,
+                    activity = activity,
+                    audioManager = audioManager,
+                    maxVolume = maxVolume,
+                    currentPositionMs = { player?.currentPosition ?: 0L },
+                    durationMs = { duration },
+                    onGestureTypeChange = { gestureType = it },
+                    onBrightnessChange = { gestureBrightnessVal = it },
+                    onVolumeChange = { gestureVolumeVal = it },
+                    onSeekPreview = { seekTimeMs, deltaSeconds ->
+                        gestureSeekTime = seekTimeMs
+                        gestureSeekDelta = deltaSeconds
+                        currentPosition = seekTimeMs
+                    },
+                    onSeekCommit = {
+                        player?.seekTo(gestureSeekTime)
+                        currentPosition = gestureSeekTime
+                    },
+                    onSeekCancel = {
+                        gestureSeekDelta = 0
+                        currentPosition = player?.currentPosition ?: currentPosition
+                    },
+                ),
+        )
         val isBuffering = playbackState == Player.STATE_BUFFERING
         val isIdle = playbackState == Player.STATE_IDLE
         val isEnded = playbackState == Player.STATE_ENDED
@@ -442,6 +538,23 @@ fun VideoPlayerScreen(
             doubleTapDeltaSeconds = doubleTapDelta,
             modifier = Modifier.align(Alignment.Center),
         )
+        if (delayedSubtitleText != null) {
+            Text(
+                text = delayedSubtitleText.orEmpty(),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth(0.92f)
+                    .padding(bottom = 88.dp)
+                    .background(Color.Black.copy(alpha = 0.72f), RoundedCornerShape(4.dp))
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                color = Color.White,
+                fontSize = subtitleSize.sp,
+                fontWeight = FontWeight.Medium,
+                textAlign = TextAlign.Center,
+                maxLines = 4,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         Box(modifier = Modifier.fillMaxSize()) {
             AnimatedVisibility(
                 visible = isLocked && showUnlockButton && !isInPip,
@@ -450,7 +563,8 @@ fun VideoPlayerScreen(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .windowInsetsPadding(WindowInsets.statusBars)
-                    .padding(top = 4.dp, end = 44.dp),
+                    .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Horizontal))
+                    .padding(top = 4.dp, end = 12.dp),
             ) {
                 UnlockButton(
                     onUnlock = {
@@ -476,6 +590,7 @@ fun VideoPlayerScreen(
                     },
                     onShowSubtitles = { showSubtitleDialog = true },
                     onShowAudioTracks = { showAudioDialog = true },
+                    onMenuExpandedChange = { showPlayerMenu = it },
                     playbackSpeed = playbackSpeed,
                     onPlaybackSpeedChange = { speed ->
                         playbackSpeed = speed
@@ -545,16 +660,14 @@ fun VideoPlayerScreen(
                 title = t("Select Audio Track", "Pilih Jalur Audio"),
                 tracks = audioTracks,
                 selectedIndex = selectedAudioTrack,
-                offTrackLabel = null,
+                offTrackLabel = t("Auto (Default)", "Otomatis (Default)"),
+                emptyMessage = t("No audio tracks found", "Track audio tidak ditemukan"),
                 onTrackSelected = { index ->
                     selectedAudioTrack = index
                     player?.let { p ->
-                        val track = audioTracks[index]
-                        p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
-                            .setOverrideForType(
-                                TrackSelectionOverride(p.currentTracks.groups[track.groupIndex].mediaTrackGroup, track.trackIndex),
-                            ).build()
+                        applyTrackSelection(p, audioTracks, index, C.TRACK_TYPE_AUDIO)
                     }
+                    saveProgress()
                     showAudioDialog = false
                 },
                 onDismiss = { showAudioDialog = false },
@@ -563,24 +676,20 @@ fun VideoPlayerScreen(
         if (showSubtitleDialog) {
             SubtitleDialog(
                 tracks = subtitleTracks,
-                selectedIndex = selectedSubtitleTrack,
+                selectedIndex = selectedSubtitleTrack.takeIf { it in subtitleTracks.indices }
+                    ?: subtitleTracks.indexOfFirst { it.isSelected },
                 subtitleSize = subtitleSize,
-                subtitleDelay = subtitleDelay,
+                subtitleDelayMs = subtitleDelayMs,
+                isExternalSubtitleSelected = isExternalSubtitleSelected,
+                canAdjustSubtitleDelay = canAdjustSubtitleDelay,
+                emptyMessage = t("No embedded subtitles found", "Subtitle bawaan tidak ditemukan"),
                 onTrackSelected = { index ->
                     selectedSubtitleTrack = index
+                    activeSubtitleUri = subtitleTracks.getOrNull(index)?.externalSubtitleUri
                     player?.let { p ->
-                        if (index == -1) {
-                            p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
-                                .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-                                .build()
-                        } else {
-                            val track = subtitleTracks[index]
-                            p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
-                                .setOverrideForType(
-                                    TrackSelectionOverride(p.currentTracks.groups[track.groupIndex].mediaTrackGroup, track.trackIndex),
-                                ).build()
-                        }
+                        applyTrackSelection(p, subtitleTracks, index, C.TRACK_TYPE_TEXT)
                     }
+                    saveProgress()
                     showSubtitleDialog = false
                 },
                 onPickExternalSubtitle = {
@@ -588,7 +697,7 @@ fun VideoPlayerScreen(
                     subtitlePickerLauncher.launch(arrayOf("*/*"))
                 },
                 onSubtitleSizeChange = { subtitleSize = it },
-                onSubtitleDelayChange = { subtitleDelay = it },
+                onSubtitleDelayChange = { subtitleDelayMs = it.coerceIn(-10_000L, 10_000L) },
                 onDismiss = { showSubtitleDialog = false },
             )
         }
@@ -634,34 +743,62 @@ private fun buildExoPlayer(
             playWhenReady = true
             setPlaybackSpeed(playbackSpeed)
             val mediaItemBuilder = MediaItem.fromUri(movie.uri.toUri()).buildUpon()
+            var hasExternalSubtitle = false
             movie.subtitleUri?.let { subtitleUriString ->
                 if (isSubtitleUriAccessible(subtitleUriString)) {
                     val subtitleUri = Uri.parse(subtitleUriString)
                     val subtitleConfig = MediaItem.SubtitleConfiguration.Builder(subtitleUri)
-                        .setMimeType(getMimeType(subtitleUri))
+                        .setMimeType(getMimeType(context, subtitleUri))
+                        .setLabel(getDocumentDisplayName(context, subtitleUri).substringBeforeLast('.'))
                         .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
                         .build()
                     mediaItemBuilder.setSubtitleConfigurations(listOf(subtitleConfig))
+                    hasExternalSubtitle = true
                 }
             }
             setMediaItem(mediaItemBuilder.build())
+            trackSelectionParameters = trackSelectionParameters.buildUpon()
+                .setTrackTypeDisabled(
+                    C.TRACK_TYPE_TEXT,
+                    !hasExternalSubtitle && movie.subtitleTrackIndex < 0,
+                )
+                .build()
             if (movie.lastPlayedPosition <= PlayerDefaults.RESUME_PROMPT_THRESHOLD_MS) {
                 prepare()
             }
         }
 }
-private fun androidx.media3.common.Tracks.toTrackLists(): Pair<List<TrackInfo>, List<TrackInfo>> {
+private fun androidx.media3.common.Tracks.toTrackLists(
+    externalSubtitleUri: String?,
+    externalSubtitleLabel: String?,
+): Pair<List<TrackInfo>, List<TrackInfo>> {
     val audios = mutableListOf<TrackInfo>()
     val subs = mutableListOf<TrackInfo>()
     groups.forEachIndexed { groupIndex, group ->
         when (group.type) {
             C.TRACK_TYPE_AUDIO -> for (i in 0 until group.length) {
                 val format = group.getTrackFormat(i)
-                audios.add(TrackInfo(groupIndex, i, format.language ?: "Audio #${audios.size + 1}", format.label))
+                val details = listOfNotNull(
+                    format.channelCount.takeIf { it > 0 }?.let { if (it == 1) "Mono" else "${it}ch" },
+                    format.sampleRate.takeIf { it > 0 }?.let { "${it / 1000} kHz" },
+                ).joinToString(" · ").ifBlank { null }
+                audios.add(TrackInfo(groupIndex, i, format.language ?: "Audio #${audios.size + 1}", format.label, group.isTrackSelected(i), details))
             }
             C.TRACK_TYPE_TEXT -> for (i in 0 until group.length) {
                 val format = group.getTrackFormat(i)
-                subs.add(TrackInfo(groupIndex, i, format.language ?: "Subtitle #${subs.size + 1}", format.label))
+                val details = format.sampleMimeType?.substringAfter('/')?.uppercase(Locale.ROOT)
+                val isExternal = externalSubtitleUri != null && format.label == externalSubtitleLabel
+                subs.add(
+                    TrackInfo(
+                        groupIndex = groupIndex,
+                        trackIndex = i,
+                        language = format.language ?: "Subtitle #${subs.size + 1}",
+                        label = format.label,
+                        isSelected = group.isTrackSelected(i),
+                        details = details,
+                        externalSubtitleUri = externalSubtitleUri.takeIf { isExternal },
+                    ),
+                )
             }
         }
     }
@@ -672,12 +809,30 @@ private fun applyTrackOverride(
     tracks: androidx.media3.common.Tracks,
     candidates: List<TrackInfo>,
     selectedIndex: Int,
+    trackType: Int,
 ) {
     if (selectedIndex !in candidates.indices) return
     val track = candidates[selectedIndex]
+    val group = tracks.groups.getOrNull(track.groupIndex) ?: return
+    if (track.trackIndex !in 0 until group.length) return
     player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+        .setTrackTypeDisabled(trackType, false)
         .setOverrideForType(TrackSelectionOverride(tracks.groups[track.groupIndex].mediaTrackGroup, track.trackIndex))
         .build()
+}
+private fun applyTrackSelection(player: ExoPlayer, candidates: List<TrackInfo>, selectedIndex: Int, trackType: Int) {
+    val builder = player.trackSelectionParameters.buildUpon()
+    if (selectedIndex == -1) {
+        builder.clearOverridesOfType(trackType)
+            .setTrackTypeDisabled(trackType, trackType == C.TRACK_TYPE_TEXT)
+    } else {
+        val track = candidates.getOrNull(selectedIndex) ?: return
+        val group = player.currentTracks.groups.getOrNull(track.groupIndex) ?: return
+        if (track.trackIndex !in 0 until group.length) return
+        builder.setTrackTypeDisabled(trackType, false)
+            .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, track.trackIndex))
+    }
+    player.trackSelectionParameters = builder.build()
 }
 private fun Modifier.playerTapGestures(
     isLocked: Boolean,
@@ -781,7 +936,7 @@ private fun Modifier.playerDragGestures(
     )
 }
 @Composable
-private fun PlayerSurface(player: ExoPlayer, zoomMode: Int) {
+private fun PlayerSurface(player: ExoPlayer, zoomMode: Int, subtitleSize: Float, hideNativeSubtitles: Boolean) {
     AndroidView(
         modifier = Modifier.fillMaxSize().testTag("movie_player_view"),
         factory = { ctx ->
@@ -801,6 +956,8 @@ private fun PlayerSurface(player: ExoPlayer, zoomMode: Int) {
                 4 -> AspectRatioFrameLayout.RESIZE_MODE_FIXED_HEIGHT
                 else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
             }
+            view.subtitleView?.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, subtitleSize)
+            view.subtitleView?.visibility = if (hideNativeSubtitles) android.view.View.INVISIBLE else android.view.View.VISIBLE
         },
         onRelease = { view -> view.player = null },
     )
@@ -954,6 +1111,7 @@ private fun TopControlBar(
     onLock: () -> Unit,
     onShowSubtitles: () -> Unit,
     onShowAudioTracks: () -> Unit,
+    onMenuExpandedChange: (Boolean) -> Unit,
     playbackSpeed: Float,
     onPlaybackSpeedChange: (Float) -> Unit,
 ) {
@@ -963,6 +1121,7 @@ private fun TopControlBar(
             .fillMaxWidth()
             .background(topScrimBrush())
             .windowInsetsPadding(WindowInsets.statusBars)
+            .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Horizontal))
             .padding(horizontal = 4.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -983,6 +1142,7 @@ private fun TopControlBar(
         SettingsMenu(
             onShowSubtitles = onShowSubtitles,
             onShowAudioTracks = onShowAudioTracks,
+            onMenuExpandedChange = onMenuExpandedChange,
             playbackSpeed = playbackSpeed,
             onPlaybackSpeedChange = onPlaybackSpeedChange,
             buttonSize = 40.dp,
@@ -1136,11 +1296,12 @@ private fun BottomControlBar(
         }
     }
 }
-private val PLAYBACK_SPEEDS = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
+private val PLAYBACK_SPEEDS = listOf(0.25f, 0.35f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
 @Composable
 private fun SettingsMenu(
     onShowSubtitles: () -> Unit,
     onShowAudioTracks: () -> Unit,
+    onMenuExpandedChange: (Boolean) -> Unit,
     playbackSpeed: Float,
     onPlaybackSpeedChange: (Float) -> Unit,
     buttonSize: androidx.compose.ui.unit.Dp,
@@ -1148,43 +1309,67 @@ private fun SettingsMenu(
     var showMenu by remember { mutableStateOf(false) }
     var showSpeedDialog by remember { mutableStateOf(false) }
     Box {
-        IconButton(onClick = { showMenu = true }, modifier = Modifier.size(buttonSize)) {
+        IconButton(onClick = { showMenu = true; onMenuExpandedChange(true) }, modifier = Modifier.size(buttonSize)) {
             Icon(Icons.Default.MoreVert, contentDescription = t("Player settings", "Pengaturan pemutar"), tint = Color.White)
         }
-        DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+        DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false; onMenuExpandedChange(false) }) {
             DropdownMenuItem(
                 text = { Text(t("Subtitles", "Subtitle")) },
                 leadingIcon = { Icon(Icons.Default.Subtitles, null) },
-                onClick = { onShowSubtitles(); showMenu = false },
+                onClick = { showMenu = false; onMenuExpandedChange(false); onShowSubtitles() },
             )
             DropdownMenuItem(
                 text = { Text(t("Audio Tracks", "Audio")) },
                 leadingIcon = { Icon(Icons.Default.Audiotrack, null) },
-                onClick = { onShowAudioTracks(); showMenu = false },
+                onClick = { showMenu = false; onMenuExpandedChange(false); onShowAudioTracks() },
             )
             DropdownMenuItem(
                 text = { Text(t("Playback Speed", "Kecepatan")) },
                 leadingIcon = { Icon(Icons.Default.Speed, null) },
-                onClick = { showSpeedDialog = true },
+                onClick = { showMenu = false; showSpeedDialog = true },
             )
         }
     }
     if (showSpeedDialog) {
         AlertDialog(
-            onDismissRequest = { showSpeedDialog = false; showMenu = false },
-            title = { Text(t("Select Speed", "Pilih Kecepatan")) },
+            onDismissRequest = { showSpeedDialog = false; showMenu = false; onMenuExpandedChange(false) },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Icon(Icons.Default.Speed, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Column {
+                        Text(t("Playback speed", "Kecepatan pemutaran"))
+                        Text("${playbackSpeed}x", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            },
             text = {
-                Column {
-                    PLAYBACK_SPEEDS.forEach { speed ->
-                        TrackRow(label = "${speed}x", isSelected = playbackSpeed == speed) {
-                            onPlaybackSpeedChange(speed)
-                            showSpeedDialog = false
-                            showMenu = false
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PLAYBACK_SPEEDS.chunked(3).forEach { rowSpeeds ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            rowSpeeds.forEach { speed ->
+                                val selected = playbackSpeed == speed
+                                Surface(
+                                    modifier = Modifier.weight(1f).height(48.dp).clickable {
+                                        onPlaybackSpeedChange(speed)
+                                        showSpeedDialog = false
+                                        showMenu = false
+                                        onMenuExpandedChange(false)
+                                    },
+                                    shape = MaterialTheme.shapes.small,
+                                    color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                                    contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text("${speed}x", fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
+                                    }
+                                }
+                            }
+                            repeat(3 - rowSpeeds.size) { Spacer(Modifier.weight(1f)) }
                         }
                     }
                 }
             },
-            confirmButton = {},
+            confirmButton = { TextButton(onClick = { showSpeedDialog = false; onMenuExpandedChange(false) }) { Text(t("Close", "Tutup")) } },
         )
     }
 }
@@ -1211,44 +1396,74 @@ private fun TrackSelectionDialog(
     tracks: List<TrackInfo>,
     selectedIndex: Int,
     offTrackLabel: String?,
+    emptyMessage: String,
     onTrackSelected: (Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(title) },
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Icon(Icons.Default.Audiotrack, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Column {
+                    Text(title)
+                    Text(
+                        if (tracks.isEmpty()) t("No tracks", "Tidak ada track") else t("${tracks.size} tracks", "${tracks.size} track"),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        },
         text = {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.heightIn(max = 360.dp)) {
                 if (offTrackLabel != null) {
                     item {
-                        TrackRow(offTrackLabel, isSelected = selectedIndex == -1) { onTrackSelected(-1) }
+                        TrackRow(
+                            label = offTrackLabel,
+                            details = t("Let the player choose", "Pilih otomatis oleh pemutar"),
+                            isSelected = selectedIndex == -1,
+                        ) { onTrackSelected(-1) }
                     }
                 }
                 items(tracks.size) { index ->
                     val track = tracks[index]
-                    TrackRow("${track.label ?: track.language} (${track.language})", isSelected = selectedIndex == index) {
+                    TrackRow(label = track.displayName(), details = track.details, isSelected = selectedIndex == index) {
                         onTrackSelected(index)
                     }
                 }
+                if (tracks.isEmpty()) item { Text(emptyMessage, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text(t("Close", "Tutup")) } },
     )
 }
 @Composable
-private fun TrackRow(label: String, isSelected: Boolean, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 12.dp, horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
+private fun TrackRow(label: String, isSelected: Boolean, details: String? = null, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = MaterialTheme.shapes.small,
+        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
     ) {
-        Text(
-            text = label,
-            modifier = Modifier.weight(1f),
-            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-        )
-        if (isSelected) {
-            Icon(Icons.Default.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f).padding(end = 8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    text = label,
+                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                    color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (!details.isNullOrBlank()) {
+                    Text(details, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            if (isSelected) {
+                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+            }
         }
     }
 }
@@ -1257,31 +1472,46 @@ private fun SubtitleDialog(
     tracks: List<TrackInfo>,
     selectedIndex: Int,
     subtitleSize: Float,
-    subtitleDelay: Int,
+    subtitleDelayMs: Long,
+    isExternalSubtitleSelected: Boolean,
+    canAdjustSubtitleDelay: Boolean,
+    emptyMessage: String,
     onTrackSelected: (Int) -> Unit,
     onPickExternalSubtitle: () -> Unit,
     onSubtitleSizeChange: (Float) -> Unit,
-    onSubtitleDelayChange: (Int) -> Unit,
+    onSubtitleDelayChange: (Long) -> Unit,
     onDismiss: () -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(t("Select Subtitles", "Pilih Teks Subtitle")) },
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Icon(Icons.Default.Subtitles, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Column {
+                    Text(t("Subtitles", "Subtitle"))
+                    Text(
+                        if (isExternalSubtitleSelected) t("External subtitle", "Subtitle eksternal") else t("Select a track", "Pilih track"),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.heightIn(max = 460.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(t("Tracks Available:", "Jalur Subtitle Tersedia:"), fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    Button(
+                    Text(t("Available tracks", "Track tersedia"), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    OutlinedButton(
                         onClick = onPickExternalSubtitle,
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                     ) {
                         Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text(t("External", "Eksternal"), fontSize = 12.sp)
+                        Text(t("Add file", "Tambah file"), fontSize = 12.sp)
                     }
                 }
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f, fill = false)) {
@@ -1292,44 +1522,137 @@ private fun SubtitleDialog(
                     }
                     items(tracks.size) { index ->
                         val track = tracks[index]
-                        TrackRow("${track.label ?: track.language} (${track.language})", isSelected = selectedIndex == index) {
+                        TrackRow(label = track.displayName(), details = track.details, isSelected = selectedIndex == index) {
                             onTrackSelected(index)
                         }
                     }
+                    if (tracks.isEmpty()) item { Text(emptyMessage, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
                 HorizontalDivider()
-                Text(t("Subtitle Size", "Ukuran Subtitle"), fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                Text(t("Text size", "Ukuran teks"), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Button(onClick = { onSubtitleSizeChange((subtitleSize - 2f).coerceAtLeast(10f)) }) { Text("-") }
-                    Text("${subtitleSize.toInt()} sp", modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
-                    Button(onClick = { onSubtitleSizeChange((subtitleSize + 2f).coerceAtMost(32f)) }) { Text("+") }
+                    OutlinedButton(onClick = { onSubtitleSizeChange((subtitleSize - 2f).coerceAtLeast(10f)) }, contentPadding = PaddingValues(horizontal = 18.dp, vertical = 6.dp)) { Text("−") }
+                    Text("${subtitleSize.toInt()} sp", modifier = Modifier.weight(1f), textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold)
+                    OutlinedButton(onClick = { onSubtitleSizeChange((subtitleSize + 2f).coerceAtMost(32f)) }, contentPadding = PaddingValues(horizontal = 18.dp, vertical = 6.dp)) { Text("+") }
                 }
-                Text(t("Subtitle Delay (Sync)", "Tunda Subtitle (Delay)"), fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                HorizontalDivider()
+                Text(t("External subtitle sync", "Sinkronisasi subtitle eksternal"), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Button(onClick = { onSubtitleDelayChange(subtitleDelay - 250) }) { Text("-250ms") }
-                    Text("$subtitleDelay ms", modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
-                    Button(onClick = { onSubtitleDelayChange(subtitleDelay + 250) }) { Text("+250ms") }
+                    Button(
+                        enabled = canAdjustSubtitleDelay && subtitleDelayMs > -10_000L,
+                        onClick = { onSubtitleDelayChange((subtitleDelayMs - 250L).coerceAtLeast(-10_000L)) },
+                    ) { Text("−250 ms") }
+                    Text(
+                        text = if (subtitleDelayMs == 0L) "0 ms" else "${if (subtitleDelayMs > 0) "+" else ""}${subtitleDelayMs} ms",
+                        modifier = Modifier.weight(1f),
+                        textAlign = TextAlign.Center,
+                    )
+                    Button(
+                        enabled = canAdjustSubtitleDelay && subtitleDelayMs < 10_000L,
+                        onClick = { onSubtitleDelayChange((subtitleDelayMs + 250L).coerceAtMost(10_000L)) },
+                    ) { Text("+250 ms") }
+                }
+                Text(t("Positive delays; negative advances", "Positif menunda; negatif memajukan"), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                if (!canAdjustSubtitleDelay) {
+                    Text(
+                        text = if (!isExternalSubtitleSelected) {
+                            t("Delay is available for external subtitles", "Delay tersedia untuk subtitle eksternal")
+                        } else {
+                            t("This subtitle format cannot be synchronized here", "Format subtitle ini belum didukung untuk sinkronisasi")
+                        },
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp,
+                    )
                 }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text(t("Close", "Tutup")) } },
     )
 }
-private fun getMimeType(uri: Uri): String {
-    val path = uri.path ?: ""
+private fun TrackInfo.displayName(): String {
+    val trackLabel = label?.takeIf { it.isNotBlank() }
     return when {
-        path.endsWith(".vtt", true) -> MimeTypes.TEXT_VTT
-        path.endsWith(".ssa", true) || path.endsWith(".ass", true) -> MimeTypes.TEXT_SSA
-        else -> MimeTypes.APPLICATION_SUBRIP
+        trackLabel == null -> language
+        trackLabel.equals(language, ignoreCase = true) -> trackLabel
+        else -> "$trackLabel · $language"
     }
+}
+private fun getMimeType(context: Context, uri: Uri): String {
+    val fileName = getDocumentDisplayName(context, uri)
+    return when {
+        fileName.endsWith(".vtt", true) -> MimeTypes.TEXT_VTT
+        fileName.endsWith(".ssa", true) || fileName.endsWith(".ass", true) -> MimeTypes.TEXT_SSA
+        fileName.endsWith(".srt", true) -> MimeTypes.APPLICATION_SUBRIP
+        else -> runCatching { context.contentResolver.getType(uri) }.getOrNull()
+            ?.takeIf { it != "application/octet-stream" } ?: MimeTypes.APPLICATION_SUBRIP
+    }
+}
+private fun getDocumentDisplayName(context: Context, uri: Uri): String {
+    val displayName = runCatching {
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            val nameColumn = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (cursor.moveToFirst() && nameColumn >= 0) cursor.getString(nameColumn) else null
+        }
+    }.getOrNull().orEmpty()
+    return displayName.ifBlank { uri.lastPathSegment.orEmpty() }
+}
+private fun loadSubtitleCues(context: Context, uri: Uri): List<SubtitleCue> {
+    val contents = runCatching {
+        context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { reader ->
+            buildString {
+                while (length < 16 * 1024 * 1024) {
+                    val line = reader.readLine() ?: break
+                    append(line).append('\n')
+                }
+            }
+        }
+    }.getOrNull().orEmpty()
+    if (contents.isBlank()) return emptyList()
+    val fileName = getDocumentDisplayName(context, uri).lowercase(Locale.ROOT)
+    val cues = if (fileName.endsWith(".ass") || fileName.endsWith(".ssa")) {
+        contents.lineSequence().mapNotNull { line ->
+            if (!line.startsWith("Dialogue:", ignoreCase = true)) return@mapNotNull null
+            val fields = line.substringAfter(':').trim().split(',', limit = 10)
+            if (fields.size < 10) return@mapNotNull null
+            val start = parseSubtitleTime(fields[1]) ?: return@mapNotNull null
+            val end = parseSubtitleTime(fields[2]) ?: return@mapNotNull null
+            val text = fields[9].replace("\\N", "\n", ignoreCase = true).replace(Regex("\\{[^}]*}"), "").trim()
+            SubtitleCue(start, end, text).takeIf { end > start && text.isNotBlank() }
+        }.toList()
+    } else {
+        contents.split(Regex("\\n\\s*\\n")).mapNotNull { block ->
+            val lines = block.lines()
+            val timingIndex = lines.indexOfFirst { "-->" in it }
+            if (timingIndex < 0) return@mapNotNull null
+            val timing = lines[timingIndex]
+            val start = parseSubtitleTime(timing.substringBefore("-->")) ?: return@mapNotNull null
+            val end = parseSubtitleTime(timing.substringAfter("-->").trim().substringBefore(' ')) ?: return@mapNotNull null
+            val text = lines.drop(timingIndex + 1).joinToString("\n").replace(Regex("<[^>]*>"), "").trim()
+            SubtitleCue(start, end, text).takeIf { end > start && text.isNotBlank() }
+        }
+    }
+    return cues.sortedBy { it.startMs }
+}
+private fun findSubtitleCue(cues: List<SubtitleCue>, positionMs: Long): SubtitleCue? {
+    val result = cues.binarySearchBy(positionMs) { it.startMs }
+    val candidateIndex = if (result >= 0) result else -result - 2
+    return cues.getOrNull(candidateIndex)?.takeIf { positionMs < it.endMs }
+}
+private fun parseSubtitleTime(value: String): Long? {
+    val match = Regex("""(?:(\d+):)?(\d{1,2}):(\d{2})[,.](\d{1,3})""").find(value.trim()) ?: return null
+    val hours = match.groupValues[1].toLongOrNull() ?: 0L
+    val minutes = match.groupValues[2].toLongOrNull() ?: return null
+    val seconds = match.groupValues[3].toLongOrNull() ?: return null
+    val millis = match.groupValues[4].padEnd(3, '0').toLongOrNull() ?: return null
+    return ((hours * 60 + minutes) * 60 + seconds) * 1000 + millis
 }
 private fun formatTime(ms: Long): String {
     val totalSeconds = ms / 1000

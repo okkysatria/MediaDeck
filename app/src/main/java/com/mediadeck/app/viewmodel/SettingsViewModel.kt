@@ -167,6 +167,7 @@ class SettingsViewModel @Inject constructor(
                 _messageEvent.emit(translate(lang, "Comics data cleared", "Data komik berhasil dihapus"))
             } catch (e: Exception) {
                 Log.e("SettingsViewModel", "Failed to clear comics data", e)
+                _messageEvent.emit(translate(lang, "Failed to clear comics data", "Gagal menghapus data komik"))
             } finally {
                 _isClearingData.value = false
                 MediaScannerService.stopService(context)
@@ -183,6 +184,7 @@ class SettingsViewModel @Inject constructor(
                 _messageEvent.emit(translate(lang, "Gallery data cleared", "Data galeri berhasil dihapus"))
             } catch (e: Exception) {
                 Log.e("SettingsViewModel", "Failed to clear gallery data", e)
+                _messageEvent.emit(translate(lang, "Failed to clear gallery data", "Gagal menghapus data galeri"))
             } finally {
                 _isClearingData.value = false
                 MediaScannerService.stopService(context)
@@ -199,6 +201,7 @@ class SettingsViewModel @Inject constructor(
                 _messageEvent.emit(translate(lang, "Movies data cleared", "Data film berhasil dihapus"))
             } catch (e: Exception) {
                 Log.e("SettingsViewModel", "Failed to clear movies data", e)
+                _messageEvent.emit(translate(lang, "Failed to clear movies data", "Gagal menghapus data video"))
             } finally {
                 _isClearingData.value = false
                 MediaScannerService.stopService(context)

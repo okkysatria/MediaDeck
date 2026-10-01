@@ -524,6 +524,16 @@ fun MovieCard(movie: Movie, isSelected: Boolean, isMultiSelect: Boolean, onOpenM
                 modifier = Modifier.fillMaxSize()
             )
             Box(modifier = Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f)))))
+            if (movie.duration > 0L) {
+                Text(
+                    text = com.mediadeck.app.util.media.MediaUtils.formatDuration(movie.duration),
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp),
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                )
+            }
             IconButton(onClick = { viewModel.toggleMovieFavorite(movie) }, modifier = Modifier.align(Alignment.TopEnd).padding(2.dp)) {
                 Icon(if (movie.isFavorite) Icons.Filled.Favorite else Icons.Default.FavoriteBorder, null, tint = if (movie.isFavorite) Color.Red else Color.White, modifier = Modifier.size(20.dp))
             }

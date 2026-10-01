@@ -70,11 +70,13 @@ class AppRepository(
         comicDao.deleteComicWithPages(id)
     }
     suspend fun clearAllComics(context: Context) {
-        getAllComicsDirect().forEach { comic ->
+        val comics = getAllComicsDirect()
+        comicDao.clearAllComicsAndPages()
+        comics.forEach { comic ->
             deletePhysicalThumbnail(context, comic.id)
         }
-        VideoThumbnailHelper.clearMemoryCache()
-        comicDao.clearAllComicsAndPages()
+        runCatching { VideoThumbnailHelper.clearMemoryCache() }
+            .onFailure { android.util.Log.w("AppRepository", "Could not clear thumbnail memory cache", it) }
         val settings = getSettingsDirect()
         settings.comicFolders.split(",").filter { it.isNotEmpty() }.forEach { uri ->
             settingsDao.deleteScannedFoldersByPrefix(uri.removeSuffix("/"))
@@ -103,11 +105,13 @@ class AppRepository(
         galleryDao.updateGalleryMetadata(uri, duration, width, height, hasThumbnail)
     }
     suspend fun clearAllGalleryItems(context: Context) {
-        getAllGalleryItemsDirect().forEach { item ->
+        val items = getAllGalleryItemsDirect()
+        galleryDao.clearAllGalleryItemsTransaction()
+        items.forEach { item ->
             deletePhysicalThumbnail(context, item.id)
         }
-        VideoThumbnailHelper.clearMemoryCache()
-        galleryDao.clearAllGalleryItemsTransaction()
+        runCatching { VideoThumbnailHelper.clearMemoryCache() }
+            .onFailure { android.util.Log.w("AppRepository", "Could not clear thumbnail memory cache", it) }
         val settings = getSettingsDirect()
         settings.galleryFolders.split(",").filter { it.isNotEmpty() }.forEach { uri ->
             settingsDao.deleteScannedFoldersByPrefix(uri.removeSuffix("/"))
@@ -146,11 +150,13 @@ class AppRepository(
         }
     }
     suspend fun clearAllMovies(context: Context) {
-        getAllMoviesDirect().forEach { movie ->
+        val movies = getAllMoviesDirect()
+        movieDao.clearAllMoviesTransaction()
+        movies.forEach { movie ->
             deletePhysicalThumbnail(context, movie.id)
         }
-        VideoThumbnailHelper.clearMemoryCache()
-        movieDao.clearAllMoviesTransaction()
+        runCatching { VideoThumbnailHelper.clearMemoryCache() }
+            .onFailure { android.util.Log.w("AppRepository", "Could not clear thumbnail memory cache", it) }
         val settings = getSettingsDirect()
         settings.movieFolders.split(",").filter { it.isNotEmpty() }.forEach { uri ->
             settingsDao.deleteScannedFoldersByPrefix(uri.removeSuffix("/"))

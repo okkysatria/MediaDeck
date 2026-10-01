@@ -47,7 +47,7 @@ interface ComicDao {
         clearAllComics()
         clearAllComicPages()
     }
-    @Query("UPDATE comics SET currentPage = 0, lastReadTime = 0")
+    @Query("UPDATE comics SET currentPage = 0, scrollOffset = 0, lastReadTime = 0, isCompleted = 0")
     suspend fun resetAllComicHistory()
     @Query("UPDATE comics SET currentPage = :currentPage, scrollOffset = :scrollOffset, lastReadTime = :lastReadTime, isCompleted = :isCompleted WHERE id = :comicId")
     suspend fun updateReadingProgress(comicId: Long, currentPage: Int, scrollOffset: Int, lastReadTime: Long, isCompleted: Boolean)

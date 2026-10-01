@@ -330,7 +330,7 @@ object VideoThumbnailHelper {
                 }
                 val sourceStartedAt = SystemClock.elapsedRealtime()
                 val smbSource = try {
-                    SmbMediaDataSource(smbFile)
+                    SmbMediaDataSource(smbFile, SmbConnectionManager.openRandomAccess(smbFile))
                 } finally {
                     logSmbStage("video open random-access source", sourceStartedAt)
                 }
@@ -419,7 +419,7 @@ object VideoThumbnailHelper {
                 val smbUrl = MediaUtils.getSmbUrlFromUri(uriString)
                 if (smbUrl != null) {
                     val smbFile = SmbConnectionManager.getSmbFile(context, smbUrl, settings)
-                    val smbSource = SmbMediaDataSource(smbFile)
+                    val smbSource = SmbMediaDataSource(smbFile, SmbConnectionManager.openRandomAccess(smbFile))
                     try {
                         retriever.setDataSource(smbSource)
                         durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
@@ -465,8 +465,7 @@ object VideoThumbnailHelper {
             null
         }
     }
-    class SmbMediaDataSource(private val smbFile: SmbFile) : MediaDataSource() {
-        private val raf = smbFile.openRandomAccess("r")
+    class SmbMediaDataSource(private val smbFile: SmbFile, private val raf: SmbRandomAccess) : MediaDataSource() {
         private val size = smbFile.length()
         private val lock = Any()
         private val blockSize = 256 * 1024

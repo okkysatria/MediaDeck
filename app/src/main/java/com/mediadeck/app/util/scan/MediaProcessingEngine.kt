@@ -327,7 +327,10 @@ object MediaProcessingEngine {
                             val smbFile = VideoThumbnailHelper.getSmbFileForUri(task.context, task.uri, task.settings)
                             if (smbFile == null) throw java.io.IOException("SMB video URI tidak valid")
                             if (smbFile != null) {
-                                val smbSource = VideoThumbnailHelper.SmbMediaDataSource(smbFile)
+                                val smbSource = VideoThumbnailHelper.SmbMediaDataSource(
+                                    smbFile,
+                                    com.mediadeck.app.util.smb.SmbConnectionManager.openRandomAccess(smbFile),
+                                )
                                 try {
                                     retriever.setDataSource(smbSource)
                                     val wStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
@@ -386,7 +389,10 @@ object MediaProcessingEngine {
             if (MediaUtils.isSmbUri(task.uri)) {
                 val smbFile = VideoThumbnailHelper.getSmbFileForUri(task.context, task.uri, task.settings)
                     ?: throw java.io.IOException("SMB video URI tidak valid")
-                VideoThumbnailHelper.SmbMediaDataSource(smbFile).use { source ->
+                VideoThumbnailHelper.SmbMediaDataSource(
+                    smbFile,
+                    com.mediadeck.app.util.smb.SmbConnectionManager.openRandomAccess(smbFile),
+                ).use { source ->
                     retriever.setDataSource(source)
                     val width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
                     val height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
@@ -442,8 +448,6 @@ object MediaProcessingEngine {
             }
         } catch (e: Exception) {
             Log.e("MediaProcessingEngine", "Gagal memproses mosaic folder ${task.folderKey}", e)
-        } finally {
-            bitmaps.forEach { if (!it.isRecycled) it.recycle() }
         }
     }
     private suspend fun awaitFolderBatchTurn(variant: String) {
