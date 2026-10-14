@@ -1,5 +1,6 @@
 package com.mediadeck.app.ui.screens
 import android.net.Uri
+import coil3.imageLoader
 import coil3.request.crossfade
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -20,13 +21,12 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.gestures.transformable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -50,18 +51,23 @@ import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FormatLineSpacing
+import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Opacity
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SortByAlpha
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -70,7 +76,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -100,12 +105,10 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.drawscope.clipRect
-import androidx.compose.ui.graphics.drawscope.scale
-import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onKeyEvent
@@ -113,6 +116,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
@@ -129,12 +133,16 @@ import com.mediadeck.app.ui.components.ZoomableMediaBox
 import com.mediadeck.app.util.i18n.t
 import com.mediadeck.app.util.scan.ScannerStateManager
 import com.mediadeck.app.viewmodel.ComicViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
 import kotlin.math.sin
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
+
+private val ReaderBarBackground = Color.Black.copy(alpha = 0.7f)
+private val ReaderPanelBackground = Color.Black.copy(alpha = 0.96f)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ComicReaderScreen(
@@ -172,26 +180,22 @@ fun ComicReaderScreen(
     var pageSortBy by remember { mutableStateOf("filename") }
     var reversePages by remember { mutableStateOf(false) }
     var showBars by remember { mutableStateOf(!settings.autoHideReaderUi) }
-    BackHandler {
-        onClose()
-    }
     val focusRequester = remember { FocusRequester() }
-    LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
+    fun restoreFocus() {
+        runCatching { focusRequester.requestFocus() }
     }
+    LaunchedEffect(Unit) { restoreFocus() }
     val processedPages = remember(pages, pageSortBy, reversePages) {
         val sorted = when (pageSortBy) {
-            "filename" -> pages
+            "filename" -> pages.sortedWith { a, b ->
+                val byName = naturalCompare(pageFileName(a), pageFileName(b))
+                if (byName != 0) byName else a.pageIndex.compareTo(b.pageIndex)
+            }
             else -> pages.sortedBy { it.pageIndex }
         }
         if (reversePages) sorted.reversed() else sorted
     }
     var pendingVolumeTarget by remember { mutableStateOf<Int?>(null) }
-    LaunchedEffect(activeComic?.currentPage) {
-        if (pendingVolumeTarget != null && activeComic?.currentPage == pendingVolumeTarget!! + 1) {
-            pendingVolumeTarget = null
-        }
-    }
     fun pageForVolumeStep(step: Int): ComicPage? {
         val baseSlot = pendingVolumeTarget ?: ((activeComic?.currentPage ?: 1) - 1).coerceAtLeast(0)
         val currentIndex = processedPages.indexOfFirst { it.pageIndex == baseSlot }
@@ -206,7 +210,37 @@ fun ComicReaderScreen(
     var showSidebar by remember { mutableStateOf(false) }
     var jumpToPage by remember { mutableStateOf<Int?>(null) }
     var animateJumpToPage by remember { mutableStateOf(false) }
+    var resetProgressRequested by remember { mutableStateOf(false) }
+    BackHandler {
+        if (showSidebar) showSidebar = false else onClose()
+    }
+
+    LaunchedEffect(activeComic?.currentPage, jumpToPage) {
+        val target = pendingVolumeTarget
+        if (target != null && jumpToPage == null && activeComic?.currentPage == target + 1) {
+            pendingVolumeTarget = null
+        }
+    }
+    LaunchedEffect(readerMode, pageSortBy, reversePages) { pendingVolumeTarget = null }
+
+
+    LaunchedEffect(resetProgressRequested, jumpToPage) {
+        if (resetProgressRequested && jumpToPage == null) {
+            delay(400)
+            activeComic?.let { viewModel.clearComicHistory(it) }
+            resetProgressRequested = false
+        }
+    }
+    fun jumpByVolumeStep(step: Int) {
+        pageForVolumeStep(step)?.let { page ->
+            pendingVolumeTarget = page.pageIndex
+            animateJumpToPage = readerMode == "horizontal_single" || readerMode == "horizontal_double"
+            if (!animateJumpToPage) viewModel.updateReadingProgress(page.pageIndex + 1)
+            jumpToPage = page.pageIndex
+        }
+    }
     val sidebarListState = rememberLazyListState()
+    LaunchedEffect(showSidebar) { if (!showSidebar) restoreFocus() }
     LaunchedEffect(showSidebar, activeComic?.currentPage) {
         if (showSidebar) {
             val currentSlot = ((activeComic?.currentPage ?: 1) - 1).coerceAtLeast(0)
@@ -225,24 +259,8 @@ fun ComicReaderScreen(
             .onKeyEvent { keyEvent ->
                 if (settings.readerVolumeKeysNavigation && keyEvent.type == KeyEventType.KeyDown) {
                     when (keyEvent.nativeKeyEvent.keyCode) {
-                        android.view.KeyEvent.KEYCODE_VOLUME_DOWN -> {
-                            pageForVolumeStep(1)?.let { page ->
-                                pendingVolumeTarget = page.pageIndex
-                                animateJumpToPage = readerMode == "horizontal_single" || readerMode == "horizontal_double"
-                                if (!animateJumpToPage) viewModel.updateReadingProgress(page.pageIndex + 1)
-                                jumpToPage = page.pageIndex
-                            }
-                            true
-                        }
-                        android.view.KeyEvent.KEYCODE_VOLUME_UP -> {
-                            pageForVolumeStep(-1)?.let { page ->
-                                pendingVolumeTarget = page.pageIndex
-                                animateJumpToPage = readerMode == "horizontal_single" || readerMode == "horizontal_double"
-                                if (!animateJumpToPage) viewModel.updateReadingProgress(page.pageIndex + 1)
-                                jumpToPage = page.pageIndex
-                            }
-                            true
-                        }
+                        android.view.KeyEvent.KEYCODE_VOLUME_DOWN -> { jumpByVolumeStep(1); true }
+                        android.view.KeyEvent.KEYCODE_VOLUME_UP -> { jumpByVolumeStep(-1); true }
                         else -> false
                     }
                 } else false
@@ -257,9 +275,9 @@ fun ComicReaderScreen(
                     ) {
                         Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                             Icon(Icons.Default.CloudOff, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(48.dp))
-                            Text("Gagal Membuka Komik", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
+                            Text(t("Failed to Open Comic", "Gagal Membuka Komik"), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
                             Text(comicLoadError ?: "", fontSize = 12.sp, textAlign = TextAlign.Center)
-                            Button(onClick = { activeComic?.let { viewModel.openComic(context, it) } }) { Text("Coba Lagi") }
+                            Button(onClick = { activeComic?.let { viewModel.openComic(context, it) } }) { Text(t("Try Again", "Coba Lagi")) }
                         }
                     }
                 } else {
@@ -328,76 +346,84 @@ fun ComicReaderScreen(
                 },
                 actions = {
                     var showSortMenu by remember { mutableStateOf(false) }
-                    Box {
-                        IconButton(onClick = { showSortMenu = true }) {
-                            Icon(Icons.Default.MoreVert, contentDescription = t("Reader options", "Opsi pembaca"), tint = Color.White)
-                        }
-                        DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
-                            DropdownMenuItem(
-                                text = { Text(if (activeComic?.isReadLater == true) t("Remove from Read Later", "Hapus dari Nanti Dibaca") else t("Read Later", "Nanti Dibaca")) },
-                                leadingIcon = {
-                                    Icon(
-                                        if (activeComic?.isReadLater == true) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                                        null,
-                                    )
-                                },
+                    LaunchedEffect(showSortMenu) { if (!showSortMenu) restoreFocus() }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box {
+                            IconButton(onClick = { showSortMenu = !showSortMenu }) {
+                                Icon(Icons.Default.MoreVert, contentDescription = t("Reader options", "Opsi pembaca"), tint = Color.White)
+                            }
+                            ReaderDropdownMenu(
+                                expanded = showSortMenu,
+                                onDismissRequest = { showSortMenu = false },
+                            ) {
+                            val isReadLater = activeComic?.isReadLater == true
+                            val isFavorite = activeComic?.isFavorite == true
+                            ReaderMenuItem(
+                                text = if (isReadLater) t("Remove from Read Later", "Hapus dari Nanti Dibaca") else t("Read Later", "Nanti Dibaca"),
+                                icon = if (isReadLater) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
                                 onClick = { activeComic?.let { viewModel.toggleComicReadLater(it) }; showSortMenu = false },
                             )
-                            DropdownMenuItem(
-                                text = { Text(if (activeComic?.isFavorite == true) t("Remove Favorite", "Hapus Favorit") else t("Add to Favorites", "Tambah ke Favorit")) },
-                                leadingIcon = {
-                                    Icon(
-                                        if (activeComic?.isFavorite == true) Icons.Filled.Favorite else Icons.Default.FavoriteBorder,
-                                        null,
-                                        tint = if (activeComic?.isFavorite == true) Color.Red else MaterialTheme.colorScheme.onSurface,
-                                    )
-                                },
+                            ReaderMenuItem(
+                                text = if (isFavorite) t("Remove Favorite", "Hapus Favorit") else t("Add to Favorites", "Tambah ke Favorit"),
+                                icon = if (isFavorite) Icons.Filled.Favorite else Icons.Default.FavoriteBorder,
+                                iconTint = if (isFavorite) Color.Red else Color.White,
                                 onClick = { activeComic?.let { viewModel.toggleComicFavorite(it) }; showSortMenu = false },
                             )
-                            HorizontalDivider()
-                            DropdownMenuItem(
-                                text = { Text(t("Filename", "Nama File")) },
-                                leadingIcon = { RadioButton(selected = pageSortBy == "filename", onClick = null) },
+                            ReaderMenuDivider()
+                            ReaderMenuHeader(t("Page order", "Urutan halaman"))
+                            ReaderMenuItem(
+                                text = t("Filename", "Nama File"),
+                                icon = Icons.Default.SortByAlpha,
+                                selected = pageSortBy == "filename",
                                 onClick = { pageSortBy = "filename"; showSortMenu = false },
                             )
-                            DropdownMenuItem(
-                                text = { Text(t("Index", "Indeks")) },
-                                leadingIcon = { RadioButton(selected = pageSortBy == "index", onClick = null) },
+                            ReaderMenuItem(
+                                text = t("Index", "Indeks"),
+                                icon = Icons.Default.FormatListNumbered,
+                                selected = pageSortBy == "index",
                                 onClick = { pageSortBy = "index"; showSortMenu = false },
                             )
-                            HorizontalDivider()
-                            DropdownMenuItem(
-                                text = { Text(t("Reverse", "Terbalik")) },
-                                leadingIcon = { Checkbox(checked = reversePages, onCheckedChange = null) },
+                            ReaderMenuItem(
+                                text = t("Reverse", "Terbalik"),
+                                icon = Icons.Default.SwapVert,
+                                selected = reversePages,
                                 onClick = { reversePages = !reversePages; showSortMenu = false },
                             )
-                            HorizontalDivider()
-                            listOf("curl" to "Page Curl", "slide" to "Slide", "fade" to "Fade").forEach { (value, label) ->
-                                DropdownMenuItem(
-                                    text = { Text(t(label, when (value) { "curl" -> "Page Curl"; "slide" -> "Geser"; else -> "Memudar" })) },
-                                    leadingIcon = { RadioButton(selected = settings.comicPageTransition == value, onClick = null) },
+                            ReaderMenuDivider()
+                            ReaderMenuHeader(t("Page transition", "Transisi halaman"))
+                            listOf(
+                                Triple("curl", t("Page Curl", "Page Curl"), Icons.Default.AutoStories),
+                                Triple("slide", t("Slide", "Geser"), Icons.Default.SwapHoriz),
+                                Triple("fade", t("Fade", "Memudar"), Icons.Default.Opacity),
+                            ).forEach { (value, label, icon) ->
+                                ReaderMenuItem(
+                                    text = label,
+                                    icon = icon,
+                                    selected = settings.comicPageTransition == value,
                                     onClick = { viewModel.setComicPageTransition(value); showSortMenu = false },
                                 )
                             }
-                            HorizontalDivider()
-                            DropdownMenuItem(
-                                text = { Text(t("Reset Progress", "Reset Progres"), color = MaterialTheme.colorScheme.error) },
-                                leadingIcon = { Icon(Icons.Default.History, null, tint = MaterialTheme.colorScheme.error) },
+                            ReaderMenuDivider()
+                            ReaderMenuItem(
+                                text = t("Reset Progress", "Reset Progres"),
+                                icon = Icons.Default.History,
+                                tint = MaterialTheme.colorScheme.error,
                                 onClick = {
-                                    activeComic?.let { viewModel.clearComicHistory(it) }
                                     pendingVolumeTarget = null
                                     animateJumpToPage = false
+                                    resetProgressRequested = true
                                     jumpToPage = processedPages.firstOrNull()?.pageIndex
                                     showSortMenu = false
                                 },
                             )
+                            }
+                        }
+                        IconButton(onClick = { showSidebar = !showSidebar }) {
+                            Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = t("Page directory", "Daftar halaman"), tint = Color.White)
                         }
                     }
-                    IconButton(onClick = { showSidebar = !showSidebar }) {
-                        Icon(Icons.AutoMirrored.Filled.MenuBook, null, tint = Color.White)
-                    }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black.copy(alpha = 0.6f)),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = ReaderBarBackground),
             )
         }
         AnimatedVisibility(
@@ -407,7 +433,7 @@ fun ComicReaderScreen(
             modifier = Modifier.align(Alignment.BottomCenter),
         ) {
             Surface(
-                color = Color.Black.copy(alpha = 0.76f),
+                color = ReaderBarBackground,
                 contentColor = Color.White,
                 modifier = Modifier.fillMaxWidth().navigationBarsPadding(),
             ) {
@@ -433,6 +459,7 @@ fun ComicReaderScreen(
                                 selected = readerMode == mode,
                                 onClick = { readerMode = mode },
                                 shape = SegmentedButtonDefaults.itemShape(index = index, count = readerModes.size),
+                                icon = {},
                             ) {
                                 Icon(icon, contentDescription = label, modifier = Modifier.size(19.dp))
                             }
@@ -454,7 +481,7 @@ fun ComicReaderScreen(
                 .widthIn(max = 360.dp)
                 .fillMaxWidth(0.82f)
                 .fillMaxHeight()
-                .background(Color.Black.copy(alpha = 0.96f))
+                .background(ReaderPanelBackground)
                 .statusBarsPadding()
                 .navigationBarsPadding(),
         ) {
@@ -462,7 +489,7 @@ fun ComicReaderScreen(
                 Text(t("Page Directory", "Daftar Halaman"), color = Color.White, modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp), fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
                 HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
                 LazyColumn(state = sidebarListState, modifier = Modifier.weight(1f)) {
-                    items(processedPages) { page ->
+                    items(processedPages, key = { it.pageIndex }) { page ->
                         val isCurrent = ((activeComic?.currentPage ?: 1) - 1).coerceAtLeast(0) == page.pageIndex
                         Row(
                             modifier = Modifier
@@ -511,7 +538,6 @@ fun VerticalReader(
     settings: AppSettings,
 ) {
     val listState = rememberLazyListState()
-    val coroutineScope = rememberCoroutineScope()
     var scale by remember { mutableFloatStateOf(1f) }
     var offsetX by remember { mutableFloatStateOf(0f) }
     var isInitialPositionRestored by remember(pages) { mutableStateOf(false) }
@@ -557,9 +583,7 @@ fun VerticalReader(
             val maxX = horizontalPanLimit(newScale)
             offsetX = (offsetX + panChange.x).coerceIn(-maxX, maxX)
             if (scale > 1.05f && panChange.y != 0f) {
-                coroutineScope.launch {
-                    listState.scrollBy(-panChange.y / scale)
-                }
+                listState.dispatchRawDelta(-panChange.y / scale)
             }
         }
         Box(
@@ -601,6 +625,8 @@ fun VerticalReader(
                     val imageRequest = remember(page.pageUri, retryCount, context) {
                         ImageRequest.Builder(context)
                             .data(Uri.parse(page.pageUri))
+                            .memoryCacheKey("${page.pageUri}_retry_$retryCount")
+                            .diskCacheKey("${page.pageUri}_retry_$retryCount")
                             .crossfade(false)
                             .build()
                     }
@@ -662,13 +688,13 @@ fun HorizontalSingleReader(
     val initialIndex = remember(pages, initialPage) {
         pages.indexOfFirst { it.pageIndex == initialPage }.coerceAtLeast(0)
     }
-    var pageIndex by remember(pages) { androidx.compose.runtime.mutableIntStateOf(initialIndex) }
-    var turningDirection by remember { androidx.compose.runtime.mutableIntStateOf(0) }
-    var dragDirection by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    var pageIndex by remember(pages) { mutableIntStateOf(initialIndex) }
+    var turningDirection by remember { mutableIntStateOf(0) }
+    var dragDirection by remember { mutableIntStateOf(0) }
     var dragDistance by remember { mutableFloatStateOf(0f) }
     var dragProgress by remember { mutableFloatStateOf(0f) }
-    var turnFromIndex by remember { androidx.compose.runtime.mutableIntStateOf(initialIndex) }
-    var queuedTapTurns by remember(pages) { androidx.compose.runtime.mutableIntStateOf(0) }
+    var turnFromIndex by remember { mutableIntStateOf(initialIndex) }
+    var queuedTapTurns by remember(pages) { mutableIntStateOf(0) }
     val turnProgress = remember { Animatable(0f) }
     val coroutineScope = rememberCoroutineScope()
     var turnJob by remember { mutableStateOf<Job?>(null) }
@@ -744,9 +770,10 @@ fun HorizontalSingleReader(
         pages.getOrNull(pageIndex)?.let { onProgressUpdate(it.pageIndex) }
     }
     if (pages.isEmpty()) return
+    PreloadComicPages(pages, (pageIndex - 1)..(pageIndex + 1))
     BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
         val currentPage = pages.getOrNull(if (turningDirection == 0) pageIndex else turnFromIndex)
-        val currentPagePainter = rememberCurlPagePainter(currentPage)
+        val currentPagePainter = rememberPageMeasurePainter(currentPage)
         val intrinsic = currentPagePainter?.intrinsicSize
         val pageWidth = if (
             intrinsic != null && intrinsic.width.isFinite() && intrinsic.height.isFinite() &&
@@ -756,7 +783,7 @@ fun HorizontalSingleReader(
         } else {
             maxWidth
         }
-        val pageWidthPx = with(androidx.compose.ui.platform.LocalDensity.current) { pageWidth.toPx() }.coerceAtLeast(1f)
+        val pageWidthPx = with(LocalDensity.current) { pageWidth.toPx() }.coerceAtLeast(1f)
         val currentPageWidthPx by rememberUpdatedState(pageWidthPx)
         val currentPageIndex by rememberUpdatedState(pageIndex)
         val currentTurnFromIndex by rememberUpdatedState(turnFromIndex)
@@ -855,34 +882,37 @@ fun HorizontalSingleReader(
                     (turnFromIndex + turningDirection).coerceIn(0, pages.lastIndex),
                 )
                 if (turningDirection != 0) {
-                    val progress = if (dragDirection != 0) dragProgress else turnProgress.value
+                    val progress: () -> Float = { if (dragDirection != 0) dragProgress else turnProgress.value }
                     when (pageTransition) {
                         "slide" -> {
                             CurlComicPage(
                                 targetPage,
                                 Modifier.fillMaxSize().graphicsLayer {
-                                    translationX = turningDirection * size.width * (1f - progress)
+                                    translationX = turningDirection * size.width * (1f - progress())
                                 },
                             )
                             CurlComicPage(
                                 shownPage,
                                 Modifier.fillMaxSize().graphicsLayer {
-                                    translationX = -turningDirection * size.width * progress
+                                    translationX = -turningDirection * size.width * progress()
                                 },
                             )
                         }
                         "fade" -> {
                             CurlComicPage(
                                 targetPage,
-                                Modifier.fillMaxSize().graphicsLayer { alpha = progress },
+                                Modifier.fillMaxSize().graphicsLayer { alpha = progress() },
                             )
                             CurlComicPage(
                                 shownPage,
-                                Modifier.fillMaxSize().graphicsLayer { alpha = 1f - progress },
+                                Modifier.fillMaxSize().graphicsLayer { alpha = 1f - progress() },
                             )
                         }
                         else -> {
                             val isBackwardTurn = turningDirection < 0
+                            val curlProgress: () -> Float = {
+                                if (isBackwardTurn) 1f - progress() else progress()
+                            }
                             CurlComicPage(
                                 if (isBackwardTurn) shownPage else targetPage,
                                 Modifier.fillMaxSize(),
@@ -891,7 +921,7 @@ fun HorizontalSingleReader(
                                 frontPage = if (isBackwardTurn) targetPage else shownPage,
                                 backPage = if (isBackwardTurn) shownPage else targetPage,
                                 direction = 1,
-                                progress = if (isBackwardTurn) 1f - progress else progress,
+                                progress = curlProgress,
                                 modifier = Modifier.fillMaxSize(),
                             )
                         }
@@ -937,6 +967,26 @@ private fun CurlComicPage(
         }
     }
 }
+
+@Composable
+private fun PreloadComicPages(pages: List<ComicPage>, pageSlots: IntRange) {
+    val context = LocalContext.current
+    val imageLoader = context.imageLoader
+    val pageUris = remember(pages, pageSlots) {
+        pageSlots.mapNotNull(pages::getOrNull).map(ComicPage::pageUri).distinct()
+    }
+    LaunchedEffect(imageLoader, pageUris) {
+        pageUris.forEach { pageUri ->
+            imageLoader.enqueue(
+                ImageRequest.Builder(context)
+                    .data(Uri.parse(pageUri))
+                    .crossfade(false)
+                    .build(),
+            )
+        }
+    }
+}
+
 @Composable
 private fun rememberCurlPagePainter(page: ComicPage?): Painter? {
     if (page == null) return null
@@ -952,12 +1002,29 @@ private fun rememberCurlPagePainter(page: ComicPage?): Painter? {
         contentScale = ContentScale.Fit,
     )
 }
+
+@Composable
+private fun rememberPageMeasurePainter(page: ComicPage?): Painter? {
+    if (page == null) return null
+    val context = LocalContext.current
+    val request = remember(page.pageUri, context) {
+        ImageRequest.Builder(context)
+            .data(Uri.parse(page.pageUri))
+            .size(512, 512)
+            .crossfade(false)
+            .build()
+    }
+    return rememberAsyncImagePainter(
+        model = request,
+        contentScale = ContentScale.Fit,
+    )
+}
 @Composable
 private fun SinglePageCurlSurface(
     frontPage: ComicPage?,
     backPage: ComicPage?,
     direction: Int,
-    progress: Float,
+    progress: () -> Float,
     modifier: Modifier = Modifier,
 ) {
     val frontAlignment = if (direction > 0) Alignment.CenterStart else Alignment.CenterEnd
@@ -965,6 +1032,7 @@ private fun SinglePageCurlSurface(
     val frontPainter = rememberCurlPagePainter(frontPage)
     val backPainter = rememberCurlPagePainter(backPage)
     Canvas(modifier) {
+        val progressValue = progress()
         val pageWidth = size.width
         val pageHeight = size.height
         val stripCount = 96
@@ -991,7 +1059,7 @@ private fun SinglePageCurlSurface(
         repeat(stripCount) { index ->
             val u = (index + 0.5f) / stripCount
             val sweepStart = (1f - u) * (1f - sweepWidth)
-            val curlPhase = ((progress - sweepStart) / sweepWidth).coerceIn(0f, 1f)
+            val curlPhase = ((progressValue - sweepStart) / sweepWidth).coerceIn(0f, 1f)
             val horizontalProjection = cos(PI.toFloat() * curlPhase)
             val isBackSide = horizontalProjection < 0f
             val painter = if (isBackSide) backPainter else frontPainter
@@ -1026,12 +1094,6 @@ private fun SinglePageCurlSurface(
                         with(painter) { draw(size = Size(sourceBounds.width, sourceBounds.height)) }
                     }
                 }
-            } else {
-                drawRect(
-                    color = Color.White,
-                    topLeft = Offset(centerX - projectedWidth / 2f, sourceBounds.top),
-                    size = Size(projectedWidth, sourceBounds.height),
-                )
             }
             val foldShade = (sin(PI * curlPhase).toFloat() * 0.22f).coerceIn(0f, 0.22f)
             if (foldShade > 0f) {
@@ -1050,7 +1112,7 @@ private fun DoublePageCurlSurface(
     frontPage: ComicPage?,
     backPage: ComicPage?,
     direction: Int,
-    progress: Float,
+    progress: () -> Float,
     modifier: Modifier = Modifier,
 ) {
     val frontAlignment = if (direction > 0) Alignment.CenterStart else Alignment.CenterEnd
@@ -1058,6 +1120,7 @@ private fun DoublePageCurlSurface(
     val frontPainter = rememberCurlPagePainter(frontPage)
     val backPainter = rememberCurlPagePainter(backPage)
     Canvas(modifier) {
+        val progressValue = progress()
         val spreadWidth = size.width
         val pageWidth = spreadWidth / 2f
         val pageHeight = size.height
@@ -1086,7 +1149,7 @@ private fun DoublePageCurlSurface(
         repeat(stripCount) { index ->
             val u = (index + 0.5f) / stripCount
             val sweepStart = (1f - u) * (1f - sweepWidth)
-            val curlPhase = ((progress - sweepStart) / sweepWidth).coerceIn(0f, 1f)
+            val curlPhase = ((progressValue - sweepStart) / sweepWidth).coerceIn(0f, 1f)
             val angle = PI.toFloat() * curlPhase
             val horizontalProjection = cos(angle)
             val isBackSide = horizontalProjection < 0f
@@ -1106,7 +1169,6 @@ private fun DoublePageCurlSurface(
             }
             val sourceCenterX = sourceBounds.left + sourceU * sourceBounds.width
             val sourceLeft = (sourceCenterX - sourceStripWidth / 2f).coerceIn(sourceBounds.left, sourceBounds.right - sourceStripWidth)
-            val painterSourceLeft = sourceLeft
             val painterSourceCenter = sourceLeft + sourceStripWidth / 2f
             val scaleX = projectedWidth / sourceStripWidth
             if (painter != null) {
@@ -1119,12 +1181,6 @@ private fun DoublePageCurlSurface(
                         with(painter) { draw(size = Size(sourceBounds.width, sourceBounds.height)) }
                     }
                 }
-            } else {
-                drawRect(
-                    color = Color.White,
-                    topLeft = Offset(targetLeft, sourceBounds.top),
-                    size = Size(projectedWidth, sourceBounds.height),
-                )
             }
             val foldShade = (sin(PI * curlPhase).toFloat() * 0.22f).coerceIn(0f, 0.22f)
             if (foldShade > 0f) {
@@ -1156,17 +1212,17 @@ fun HorizontalDoubleReader(
         }
         val initialSpread = bookSpreadForSlot(initialSlot)
         val spreadCount = pages.size / 2 + 1
-        var spreadIndex by remember(pages) { androidx.compose.runtime.mutableIntStateOf(initialSpread) }
-        var turningDirection by remember { androidx.compose.runtime.mutableIntStateOf(0) }
-        var dragDirection by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+        var spreadIndex by remember(pages) { mutableIntStateOf(initialSpread) }
+        var turningDirection by remember { mutableIntStateOf(0) }
+        var dragDirection by remember { mutableIntStateOf(0) }
         var dragDistance by remember { mutableFloatStateOf(0f) }
         var dragProgress by remember { mutableFloatStateOf(0f) }
-        var turnFromSpread by remember { androidx.compose.runtime.mutableIntStateOf(initialSpread) }
-        var queuedTapTurns by remember(pages) { androidx.compose.runtime.mutableIntStateOf(0) }
+        var turnFromSpread by remember { mutableIntStateOf(initialSpread) }
+        var queuedTapTurns by remember(pages) { mutableIntStateOf(0) }
         val turnProgress = remember { Animatable(0f) }
         val coroutineScope = rememberCoroutineScope()
         var turnJob by remember { mutableStateOf<Job?>(null) }
-        val density = androidx.compose.ui.platform.LocalDensity.current
+        val density = LocalDensity.current
         val currentOnTap by rememberUpdatedState(onTap)
         fun startTurn(direction: Int) {
             if (direction == 0) return
@@ -1248,14 +1304,21 @@ fun HorizontalDoubleReader(
         if (pages.isEmpty()) return@BoxWithConstraints
         val destinationSpread = (turnFromSpread + turningDirection).coerceIn(0, spreadCount - 1)
         val shownSpread = if (turningDirection == 0) spreadIndex else turnFromSpread
+        val preloadSpread = if (turningDirection == 0) spreadIndex else turnFromSpread + turningDirection
+        PreloadComicPages(
+            pages,
+            (leftPageSlotForSpread(preloadSpread - 1))..rightPageSlotForSpread(preloadSpread + 1),
+        )
         val currentLeftPage = pages.getOrNull(leftPageSlotForSpread(shownSpread))
         val currentRightPage = pages.getOrNull(rightPageSlotForSpread(shownSpread))
         val destinationLeftPage = pages.getOrNull(leftPageSlotForSpread(destinationSpread))
         val destinationRightPage = pages.getOrNull(rightPageSlotForSpread(destinationSpread))
-        val pageProgress = when {
-            turningDirection == 0 -> 0f
-            dragDirection != 0 -> dragProgress
-            else -> turnProgress.value
+        val pageProgress: () -> Float = {
+            when {
+                turningDirection == 0 -> 0f
+                dragDirection != 0 -> dragProgress
+                else -> turnProgress.value
+            }
         }
         val underlayLeft = if (turningDirection < 0) destinationLeftPage else currentLeftPage
         val underlayRight = if (turningDirection > 0) destinationRightPage else currentRightPage
@@ -1266,11 +1329,11 @@ fun HorizontalDoubleReader(
         val contentHeight = maxHeight - innerPadding.calculateTopPadding() - innerPadding.calculateBottomPadding()
         val pageWidthPx = with(density) { (contentWidth / 2).toPx() }.coerceAtLeast(1f)
         val pageHeightPx = with(density) { contentHeight.toPx() }.coerceAtLeast(1f)
-        val gesturePainter = rememberCurlPagePainter(turningFront)
-        val currentLeftPainter = rememberCurlPagePainter(currentLeftPage)
-        val currentRightPainter = rememberCurlPagePainter(currentRightPage)
-        val destinationLeftPainter = rememberCurlPagePainter(destinationLeftPage)
-        val destinationRightPainter = rememberCurlPagePainter(destinationRightPage)
+        val gesturePainter = rememberPageMeasurePainter(turningFront)
+        val currentLeftPainter = rememberPageMeasurePainter(currentLeftPage)
+        val currentRightPainter = rememberPageMeasurePainter(currentRightPage)
+        val destinationLeftPainter = rememberPageMeasurePainter(destinationLeftPage)
+        val destinationRightPainter = rememberPageMeasurePainter(destinationRightPage)
         val sourceSize = gesturePainter?.intrinsicSize
         val pageAspect = pageWidthPx / pageHeightPx
         val imageWidthFraction = if (
@@ -1310,7 +1373,7 @@ fun HorizontalDoubleReader(
         val currentDragWidthPx by rememberUpdatedState(
             if (pageTransition == "slide") slideDragWidthPx else dragWidthPx,
         )
-        BoxWithConstraints(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
@@ -1411,7 +1474,7 @@ fun HorizontalDoubleReader(
                 }
                 Row(
                     Modifier.fillMaxSize().graphicsLayer {
-                        translationX = -turningDirection * currentSlideDistance * pageProgress
+                        translationX = -turningDirection * currentSlideDistance * pageProgress()
                     },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -1428,7 +1491,7 @@ fun HorizontalDoubleReader(
                 }
                 Row(
                     Modifier.fillMaxSize().graphicsLayer {
-                        translationX = turningDirection * destinationSlideDistance * (1f - pageProgress)
+                        translationX = turningDirection * destinationSlideDistance * (1f - pageProgress())
                     },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -1443,10 +1506,10 @@ fun HorizontalDoubleReader(
                         imageAlignment = Alignment.CenterStart,
                     )
                 }
-            } else if (turningDirection != 0 && pageTransition != "curl") {
+            } else if (turningDirection != 0 && pageTransition == "fade") {
                 Row(
                     Modifier.fillMaxSize().graphicsLayer {
-                        alpha = 1f - pageProgress
+                        alpha = 1f - pageProgress()
                     },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -1463,7 +1526,7 @@ fun HorizontalDoubleReader(
                 }
                 Row(
                     Modifier.fillMaxSize().graphicsLayer {
-                        alpha = pageProgress
+                        alpha = pageProgress()
                     },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -1510,3 +1573,104 @@ private fun leftPageSlotForSpread(spreadIndex: Int): Int =
     if (spreadIndex == 0) -1 else spreadIndex * 2 - 1
 private fun rightPageSlotForSpread(spreadIndex: Int): Int =
     if (spreadIndex == 0) 0 else spreadIndex * 2
+private fun pageFileName(page: ComicPage): String =
+    (Uri.parse(page.pageUri).lastPathSegment ?: page.pageUri)
+        .substringAfterLast('/')
+        .lowercase()
+private fun naturalCompare(a: String, b: String): Int {
+    var i = 0
+    var j = 0
+    while (i < a.length && j < b.length) {
+        val ca = a[i]
+        val cb = b[j]
+        if (ca.isDigit() && cb.isDigit()) {
+            var ei = i
+            while (ei < a.length && a[ei].isDigit()) ei++
+            var ej = j
+            while (ej < b.length && b[ej].isDigit()) ej++
+            val na = a.substring(i, ei).trimStart('0')
+            val nb = b.substring(j, ej).trimStart('0')
+            if (na.length != nb.length) return na.length.compareTo(nb.length)
+            val c = na.compareTo(nb)
+            if (c != 0) return c
+            i = ei
+            j = ej
+        } else {
+            val c = ca.compareTo(cb)
+            if (c != 0) return c
+            i++
+            j++
+        }
+    }
+    return (a.length - i).compareTo(b.length - j)
+}
+@Composable
+private fun ReaderMenuHeader(text: String) {
+    Text(
+        text = text.uppercase(),
+        color = Color.White.copy(alpha = 0.5f),
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 0.8.sp,
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
+    )
+}
+@Composable
+private fun ReaderMenuDivider() {
+    HorizontalDivider(
+        color = Color.White.copy(alpha = 0.12f),
+        modifier = Modifier.padding(vertical = 4.dp),
+    )
+}
+@Composable
+private fun ReaderMenuItem(
+    text: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    selected: Boolean = false,
+    tint: Color = Color.White,
+    iconTint: Color = tint,
+) {
+    val accent = MaterialTheme.colorScheme.primary
+    DropdownMenuItem(
+        text = {
+            Text(
+                text = text,
+                color = if (selected) accent else tint,
+                fontSize = 14.sp,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            )
+        },
+        leadingIcon = {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = if (selected) accent else iconTint,
+                modifier = Modifier.size(20.dp),
+            )
+        },
+        trailingIcon = if (selected) {
+            { Icon(Icons.Default.Check, contentDescription = null, tint = accent, modifier = Modifier.size(18.dp)) }
+        } else null,
+        onClick = onClick,
+    )
+}
+
+@Composable
+private fun ReaderDropdownMenu(
+    expanded: Boolean,
+    onDismissRequest: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val maxMenuHeight = (LocalConfiguration.current.screenHeightDp.dp - 96.dp).coerceAtLeast(240.dp)
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismissRequest,
+        modifier = Modifier
+            .widthIn(min = 240.dp, max = 320.dp)
+            .heightIn(max = maxMenuHeight)
+            .clip(RoundedCornerShape(8.dp))
+            .background(ReaderPanelBackground),
+        content = content,
+    )
+}

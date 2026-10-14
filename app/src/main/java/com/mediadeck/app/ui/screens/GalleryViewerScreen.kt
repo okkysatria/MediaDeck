@@ -122,6 +122,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.net.toUri
 import coil3.compose.SubcomposeAsyncImage
+import coil3.imageLoader
 import coil3.request.ImageRequest
 import coil3.request.CachePolicy
 import coil3.size.Size
@@ -181,6 +182,7 @@ fun GalleryViewerScreen(
     ) { items.size }
     var isPagerScrollEnabled by remember { mutableStateOf(true) }
     val currentIndex = pagerState.currentPage
+    PreloadGalleryNeighbors(items, currentIndex)
     val currentItem = remember(currentIndex, items) {
         if (items.isNotEmpty() && currentIndex < items.size) items[currentIndex] else null
     }
@@ -880,6 +882,10 @@ fun GalleryPageItem(
                 )
             }
         } else {
+            val context = LocalContext.current
+            val originalRequest = remember(item.uri, context) {
+                galleryOriginalRequest(context, item.uri)
+            }
             ZoomableMediaBox(
                 onTap = onToggleUi,
                 onScaleChange = { s -> 
@@ -891,13 +897,7 @@ fun GalleryPageItem(
                 modifier = Modifier.fillMaxSize(),
             ) { boxScale, boxOffset ->
                 SubcomposeAsyncImage(
-                    model = ImageRequest.Builder(LocalContext.current)
-                        .data(item.uri)
-                        .size(Size.ORIGINAL)
-                        .precision(Precision.EXACT)
-                        .memoryCachePolicy(CachePolicy.DISABLED)
-                        .diskCachePolicy(CachePolicy.DISABLED)
-                        .build(),
+                    model = originalRequest,
                     contentDescription = item.name,
                     contentScale = if (isFitMode) ContentScale.Fit else ContentScale.None,
                     modifier = Modifier
@@ -963,3 +963,30 @@ fun GalleryPageItem(
         }
     }
 }
+
+@Composable
+private fun PreloadGalleryNeighbors(items: List<GalleryItem>, currentIndex: Int) {
+    val context = LocalContext.current
+    val imageLoader = context.imageLoader
+    val neighborUris = remember(items, currentIndex) {
+        (currentIndex - 1..currentIndex + 1)
+            .filter { it in items.indices && it != currentIndex }
+            .mapNotNull { items.getOrNull(it) }
+            .filterNot { it.mimeType.contains("video", ignoreCase = true) }
+            .map { it.uri }
+    }
+    LaunchedEffect(imageLoader, neighborUris) {
+        neighborUris.forEach { uri ->
+            imageLoader.enqueue(galleryOriginalRequest(context, uri))
+        }
+    }
+}
+
+private fun galleryOriginalRequest(context: android.content.Context, uri: String): ImageRequest =
+    ImageRequest.Builder(context)
+        .data(uri)
+        .size(Size.ORIGINAL)
+        .precision(Precision.EXACT)
+        .memoryCachePolicy(CachePolicy.ENABLED)
+        .diskCachePolicy(CachePolicy.DISABLED)
+        .build()

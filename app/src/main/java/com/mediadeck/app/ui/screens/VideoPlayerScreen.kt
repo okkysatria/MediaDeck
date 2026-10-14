@@ -1,5 +1,10 @@
-@file:OptIn(UnstableApi::class, ExperimentalMaterial3Api::class)
+@file:OptIn(
+    ExperimentalMaterial3Api::class,
+    ExperimentalLayoutApi::class,
+)
+@file:UnstableApi
 package com.mediadeck.app.ui.screens
+import kotlin.OptIn
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -11,7 +16,6 @@ import android.util.TypedValue
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -131,7 +135,6 @@ private object PlayerDefaults {
     const val BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS = 5_000
 }
 private enum class GestureType { NONE, VOLUME, BRIGHTNESS, SEEK, DOUBLE_TAP_LEFT, DOUBLE_TAP_RIGHT }
-@OptIn(UnstableApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun VideoPlayerScreen(
     viewModel: MovieViewModel,
@@ -475,9 +478,11 @@ fun VideoPlayerScreen(
                     onDoubleTapSeek = { deltaSeconds, isLeft ->
                         scope.launch {
                             player?.let { p ->
-                                doubleTapDelta += if (isLeft) -settings.videoSkipInterval else settings.videoSkipInterval
+                                val signedDeltaSeconds = if (isLeft) -deltaSeconds else deltaSeconds
+                                doubleTapDelta += signedDeltaSeconds
                                 gestureType = if (isLeft) GestureType.DOUBLE_TAP_LEFT else GestureType.DOUBLE_TAP_RIGHT
-                                val newPosition = (p.currentPosition + deltaSeconds * 1000L).coerceIn(0L, duration)
+                                val seekDuration = p.duration.takeIf { it > 0L } ?: duration
+                                val newPosition = (p.currentPosition + signedDeltaSeconds * 1000L).coerceIn(0L, seekDuration.coerceAtLeast(0L))
                                 p.seekTo(newPosition)
                                 currentPosition = newPosition
                                 delay(PlayerDefaults.GESTURE_INDICATOR_VISIBLE_MS.milliseconds)
@@ -557,26 +562,7 @@ fun VideoPlayerScreen(
         }
         Box(modifier = Modifier.fillMaxSize()) {
             AnimatedVisibility(
-                visible = isLocked && showUnlockButton && !isInPip,
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .windowInsetsPadding(WindowInsets.statusBars)
-                    .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Horizontal))
-                    .padding(top = 4.dp, end = 12.dp),
-            ) {
-                UnlockButton(
-                    onUnlock = {
-                        isLocked = false
-                        showUnlockButton = false
-                        showController = true
-                    },
-                    modifier = Modifier,
-                )
-            }
-            AnimatedVisibility(
-                visible = showController && !isLocked && !isInPip,
+                visible = showController && !isInPip && (!isLocked || showUnlockButton),
                 enter = fadeIn() + slideInVertically(initialOffsetY = { -it }),
                 exit = fadeOut() + slideOutVertically(targetOffsetY = { -it }),
                 modifier = Modifier.align(Alignment.TopCenter),
@@ -584,9 +570,15 @@ fun VideoPlayerScreen(
                 TopControlBar(
                     title = movie.title,
                     onClose = onClose,
+                    isLocked = isLocked,
                     onLock = {
                         isLocked = true
                         showUnlockButton = true
+                    },
+                    onUnlock = {
+                        isLocked = false
+                        showUnlockButton = false
+                        showController = true
                     },
                     onShowSubtitles = { showSubtitleDialog = true },
                     onShowAudioTracks = { showAudioDialog = true },
@@ -703,6 +695,7 @@ fun VideoPlayerScreen(
         }
     }
 }
+@UnstableApi
 private fun buildExoPlayer(
     context: Context,
     movie: Movie,
@@ -914,7 +907,7 @@ private fun Modifier.playerDragGestures(
                     val newBrightness = (startBrightness - totalDragY / size.height).coerceIn(0.01f, 1f)
                     val layoutParams = activity?.window?.attributes
                     layoutParams?.screenBrightness = newBrightness
-                    if (layoutParams != null) activity?.window?.attributes = layoutParams
+                    if (layoutParams != null) activity.window.attributes = layoutParams
                     onBrightnessChange((newBrightness * 100).toInt())
                 }
                 GestureType.VOLUME -> {
@@ -1080,7 +1073,7 @@ private fun GestureProgressIndicator(icon: ImageVector, percent: Int) {
 private fun UnlockButton(onUnlock: () -> Unit, modifier: Modifier = Modifier) {
     IconButton(
         onClick = onUnlock,
-        modifier = modifier.size(40.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.45f)),
+        modifier = modifier.size(40.dp),
         colors = IconButtonDefaults.iconButtonColors(contentColor = Color.White),
     ) {
         Icon(Icons.Default.LockOpen, contentDescription = t("Unlock controls", "Buka kunci kontrol"), modifier = Modifier.size(22.dp))
@@ -1090,7 +1083,7 @@ private fun UnlockButton(onUnlock: () -> Unit, modifier: Modifier = Modifier) {
 private fun LockButton(onLock: () -> Unit, buttonSize: androidx.compose.ui.unit.Dp = 48.dp) {
     IconButton(
         onClick = onLock,
-        modifier = Modifier.size(buttonSize).clip(CircleShape).background(Color.Black.copy(alpha = 0.45f)),
+        modifier = Modifier.size(buttonSize),
         colors = IconButtonDefaults.iconButtonColors(contentColor = Color.White),
     ) {
         Icon(Icons.Default.Lock, contentDescription = t("Lock controls", "Kunci kontrol"), modifier = Modifier.size(24.dp))
@@ -1108,7 +1101,9 @@ private fun bottomScrimBrush() = Brush.verticalGradient(
 private fun TopControlBar(
     title: String,
     onClose: () -> Unit,
+    isLocked: Boolean,
     onLock: () -> Unit,
+    onUnlock: () -> Unit,
     onShowSubtitles: () -> Unit,
     onShowAudioTracks: () -> Unit,
     onMenuExpandedChange: (Boolean) -> Unit,
@@ -1121,7 +1116,7 @@ private fun TopControlBar(
             .fillMaxWidth()
             .background(topScrimBrush())
             .windowInsetsPadding(WindowInsets.statusBars)
-            .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Horizontal))
+            .windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility.only(WindowInsetsSides.Horizontal))
             .padding(horizontal = 4.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1138,18 +1133,25 @@ private fun TopControlBar(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        LockButton(onLock = onLock, buttonSize = 40.dp)
-        SettingsMenu(
-            onShowSubtitles = onShowSubtitles,
-            onShowAudioTracks = onShowAudioTracks,
-            onMenuExpandedChange = onMenuExpandedChange,
-            playbackSpeed = playbackSpeed,
-            onPlaybackSpeedChange = onPlaybackSpeedChange,
-            buttonSize = 40.dp,
-        )
+        if (isLocked) {
+            UnlockButton(onUnlock = onUnlock)
+        } else {
+            LockButton(onLock = onLock, buttonSize = 40.dp)
+        }
+        if (isLocked) {
+            Spacer(Modifier.size(40.dp))
+        } else {
+            SettingsMenu(
+                onShowSubtitles = onShowSubtitles,
+                onShowAudioTracks = onShowAudioTracks,
+                onMenuExpandedChange = onMenuExpandedChange,
+                playbackSpeed = playbackSpeed,
+                onPlaybackSpeedChange = onPlaybackSpeedChange,
+                buttonSize = 40.dp,
+            )
+        }
     }
 }
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun BottomControlBar(
     currentPosition: Long,

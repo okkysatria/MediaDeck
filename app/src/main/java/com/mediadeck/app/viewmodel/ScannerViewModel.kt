@@ -245,8 +245,6 @@ class ScannerViewModel @Inject constructor(
                                                         },
                                                         checkControl = checkControl,
                                                         knownUris = knownUris,
-                                                        folderCache = folderCache,
-                                                        updatedFolderCache = updatedFolderCache,
                                                         rootUrl = uri,
                                                         onItemsFound = { c, g, m ->
                                                             mapMutex.withLock { processScanResultsInternal(appContext, dedupeTracker.dedupe(Triple(c, g, m)), settings, allExistingMovies, allExistingComics, allExistingGallery, galleryByFolder, foldersModified) }
@@ -602,8 +600,6 @@ class ScannerViewModel @Inject constructor(
                                 },
                                 checkControl = checkControl,
                                 knownUris = knownUris,
-                                folderCache = emptyMap(),
-                                updatedFolderCache = updatedFolderCache,
                                 rootUrl = folderUriStr,
                                 onItemsFound = { c, g, m ->
                                     mapMutex.withLock { processScanResultsInternal(appContext, dedupeTracker.dedupe(Triple(c, g, m)), settings, allExistingMovies, allExistingComics, allExistingGallery, galleryByFolder, foldersModified) }

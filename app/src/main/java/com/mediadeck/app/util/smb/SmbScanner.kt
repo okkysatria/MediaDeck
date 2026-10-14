@@ -34,7 +34,7 @@ object SmbScanner {
         defaultValue
     }
     private suspend fun isSmbDirectory(file: SmbFile): Boolean =
-        smbMetadataOr(false) { file.isDirectory }
+        interruptibleSmbCall { file.isDirectory }
     private suspend fun smbFileLength(file: SmbFile): Long =
         smbMetadataOr(0L) { file.length() }
     private suspend fun smbLastModified(file: SmbFile): Long =
@@ -119,8 +119,6 @@ object SmbScanner {
         onProgress: (String) -> Unit = {},
         checkControl: suspend () -> Unit = {},
         knownUris: Set<String> = emptySet(),
-        folderCache: Map<String, Long> = emptyMap(),
-        updatedFolderCache: MutableMap<String, Long> = java.util.concurrent.ConcurrentHashMap(),
         rootUrl: String? = null,
         onItemsFound: (suspend (List<Comic>, List<GalleryItem>, List<Movie>) -> Unit)? = null,
     ): Triple<List<Comic>, List<GalleryItem>, List<Movie>> = withContext(Dispatchers.IO) {
@@ -150,11 +148,11 @@ object SmbScanner {
                     shareNameParam.ifEmpty { settings.smbShare }
                 }
                 when (scanType) {
-                    "comics" -> findComicFoldersSmb(context, rootFile, shareName, comics, settings, onProgress, checkControl, knownUris, folderCache, updatedFolderCache, onItemsFound = onItemsFound)
-                    "gallery" -> scanFileTreeForGallerySmb(context, rootFile, shareName, gallery, settings, onProgress, checkControl, knownUris, folderCache, updatedFolderCache, onItemsFound = onItemsFound)
-                    "movies" -> scanFileTreeForMoviesSmb(context, rootFile, shareName, movies, settings, onProgress, checkControl, knownUris, folderCache, updatedFolderCache, onItemsFound = onItemsFound)
+                    "comics" -> findComicFoldersSmb(context, rootFile, shareName, comics, settings, onProgress, checkControl, knownUris, onItemsFound = onItemsFound)
+                    "gallery" -> scanFileTreeForGallerySmb(context, rootFile, shareName, gallery, settings, onProgress, checkControl, knownUris, onItemsFound = onItemsFound)
+                    "movies" -> scanFileTreeForMoviesSmb(context, rootFile, shareName, movies, settings, onProgress, checkControl, knownUris, onItemsFound = onItemsFound)
                     else -> {
-                        scanFileTreeAllSmb(context, rootFile, shareName, comics, gallery, movies, settings, onProgress, checkControl, knownUris, folderCache, updatedFolderCache, onItemsFound = onItemsFound)
+                        scanFileTreeAllSmb(context, rootFile, shareName, comics, gallery, movies, settings, onProgress, checkControl, knownUris, onItemsFound = onItemsFound)
                     }
                 }
             } else {
@@ -181,27 +179,16 @@ object SmbScanner {
         onProgress: (String) -> Unit,
         checkControl: suspend () -> Unit,
         knownUris: Set<String> = emptySet(),
-        folderCache: Map<String, Long> = emptyMap(),
-        updatedFolderCache: MutableMap<String, Long> = java.util.concurrent.ConcurrentHashMap(),
-        knownLastModified: Long = -1L,
         onItemsFound: (suspend (List<Comic>, List<GalleryItem>, List<Movie>) -> Unit)? = null,
     ) {
         checkControl()
         val folderUrlStr = dir.url.toString()
-        val currentMod = if (knownLastModified != -1L) knownLastModified else smbLastModified(dir)
-        val cachedMod = folderCache[folderUrlStr]
-        if (cachedMod != null && cachedMod == currentMod && currentMod > 0) {
-            updatedFolderCache[folderUrlStr] = currentMod
-            return
-        }
-        val files = try {
-            interruptibleSmbCall { dir.listFiles() }
-        } catch (e: Exception) {
-            if (e is kotlinx.coroutines.CancellationException) throw e
-            onProgress("Error reading folder")
-            null
-        } ?: return
+        val currentMod = smbLastModified(dir)
+
+        val files = interruptibleSmbCall { dir.listFiles() }
+            ?: throw java.io.IOException("SMB returned no listing for $folderUrlStr")
         val subDirs = mutableListOf<SmbFile>()
+        val regularFiles = mutableListOf<SmbFile>()
         val folderGallery = mutableListOf<GalleryItem>()
         val folderMovies = mutableListOf<Movie>()
         for (file in files) {
@@ -213,6 +200,7 @@ object SmbScanner {
             if (isSmbDirectory(file)) {
                 subDirs.add(file)
             } else {
+                regularFiles.add(file)
                 if (knownUris.contains(cpUri) || knownUris.contains(fileUrlStr)) continue
                 val name = file.name
                 val ext = MediaUtils.getFileExt(name)
@@ -257,8 +245,8 @@ object SmbScanner {
                 }
             }
         }
-        val imageFilesRaw = files.filter { !it.isDirectory && MediaUtils.isImageExt(MediaUtils.getFileExt(it.name)) }
-        val filteredImages = imageFilesRaw.filter { 
+        val imageFilesRaw = regularFiles.filter { MediaUtils.isImageExt(MediaUtils.getFileExt(it.name)) }
+        val filteredImages = imageFilesRaw.filter {
             val name = it.name.lowercase()
             !name.startsWith("folder.") && !name.startsWith("cover.") && !name.startsWith("albumart") && !name.contains("banner")
         }
@@ -285,7 +273,7 @@ object SmbScanner {
                     dateAdded = currentMod.takeIf { it > 0 } ?: smbLastModified(dir),
                     tags = parsed.tags.joinToString(","),
                 )
-                comics.add(comic) 
+                comics.add(comic)
                 onItemsFound?.invoke(listOf(comic), emptyList(), emptyList())
             } else {
                 val comicStub = Comic(title = "", folderUri = folderUrlStr, coverUri = "", totalPages = filteredImages.size)
@@ -295,17 +283,15 @@ object SmbScanner {
         if (folderGallery.isNotEmpty() || folderMovies.isNotEmpty()) {
             onItemsFound?.invoke(emptyList(), folderGallery, folderMovies)
         }
-        updatedFolderCache[folderUrlStr] = currentMod
         onProgress(parentFolderName)
         if (subDirs.isNotEmpty()) {
             withContext(Dispatchers.IO) {
-                subDirs.chunked(6).map { batch -> 
+                subDirs.chunked(6).map { batch ->
                     launch {
                         batch.forEach { file ->
                             checkControl()
                             val nextFolderName = Uri.parse(file.url.toString()).lastPathSegment?.trim('/') ?: file.name.trim('/')
-                            val lastMod = smbMetadataOr(-1L) { file.lastModified() }
-                            scanFileTreeAllSmb(context, file, nextFolderName, comics, gallery, movies, settings, onProgress, checkControl, knownUris, folderCache, updatedFolderCache, lastMod, onItemsFound)
+                            scanFileTreeAllSmb(context, file, nextFolderName, comics, gallery, movies, settings, onProgress, checkControl, knownUris, onItemsFound)
                         }
                     }
                 }.joinAll()
@@ -321,25 +307,21 @@ object SmbScanner {
         onProgress: (String) -> Unit,
         checkControl: suspend () -> Unit,
         knownUris: Set<String> = emptySet(),
-        folderCache: Map<String, Long> = emptyMap(),
-        updatedFolderCache: MutableMap<String, Long> = java.util.concurrent.ConcurrentHashMap(),
-        knownLastModified: Long = -1L,
         onItemsFound: (suspend (List<Comic>, List<GalleryItem>, List<Movie>) -> Unit)? = null,
     ) {
         checkControl()
         val folderUrlStr = dir.url.toString()
-        val currentMod = if (knownLastModified != -1L) knownLastModified else smbLastModified(dir)
-        val cachedMod = folderCache[folderUrlStr]
-        if (cachedMod != null && cachedMod == currentMod && currentMod > 0) {
-            updatedFolderCache[folderUrlStr] = currentMod
-            return
-        }
         try {
-            val allFiles = interruptibleSmbCall { dir.listFiles() } ?: return
-            val files = allFiles.filter { !it.isDirectory && !it.name.startsWith("._") }
-            val subDirs = allFiles.filter { it.isDirectory }
+            val allFiles = interruptibleSmbCall { dir.listFiles() }
+                ?: throw java.io.IOException("SMB returned no listing for $folderUrlStr")
+            val files = mutableListOf<SmbFile>()
+            val subDirs = mutableListOf<SmbFile>()
+            for (file in allFiles) {
+                if (file.name.startsWith("._")) continue
+                if (isSmbDirectory(file)) subDirs.add(file) else files.add(file)
+            }
             val imageFiles = files.filter { MediaUtils.isImageExt(MediaUtils.getFileExt(it.name)) }
-            val filteredImages = imageFiles.filter { 
+            val filteredImages = imageFiles.filter {
                 val name = it.name.lowercase()
                 !name.startsWith("folder.") && !name.startsWith("cover.") && !name.startsWith("albumart") && !name.contains("banner")
             }
@@ -367,7 +349,6 @@ object SmbScanner {
                     synchronized(comics) { comics.add(comic) }
                 }
             }
-            updatedFolderCache[folderUrlStr] = currentMod
             if (subDirs.isNotEmpty()) {
                 withContext(Dispatchers.IO) {
                     subDirs.chunked(6).map { batch ->
@@ -375,8 +356,7 @@ object SmbScanner {
                             batch.forEach { file ->
                                 checkControl()
                                 val nextFolderName = Uri.parse(file.url.toString()).lastPathSegment?.trim('/') ?: file.name.trim('/')
-                                val lastMod = smbMetadataOr(-1L) { file.lastModified() }
-                                findComicFoldersSmb(context, file, nextFolderName, comics, settings, onProgress, checkControl, knownUris, folderCache, updatedFolderCache, lastMod, onItemsFound)
+                                findComicFoldersSmb(context, file, nextFolderName, comics, settings, onProgress, checkControl, knownUris, onItemsFound)
                             }
                         }
                     }.joinAll()
@@ -400,21 +380,13 @@ object SmbScanner {
         onProgress: (String) -> Unit,
         checkControl: suspend () -> Unit,
         knownUris: Set<String> = emptySet(),
-        folderCache: Map<String, Long> = emptyMap(),
-        updatedFolderCache: MutableMap<String, Long> = java.util.concurrent.ConcurrentHashMap(),
-        knownLastModified: Long = -1L,
         onItemsFound: (suspend (List<Comic>, List<GalleryItem>, List<Movie>) -> Unit)? = null,
     ) {
         checkControl()
         val folderUrlStr = dir.url.toString()
-        val currentMod = if (knownLastModified != -1L) knownLastModified else smbLastModified(dir)
-        val cachedMod = folderCache[folderUrlStr]
-        if (cachedMod != null && cachedMod == currentMod && currentMod > 0) {
-            updatedFolderCache[folderUrlStr] = currentMod
-            return
-        }
         try {
-            val files = interruptibleSmbCall { dir.listFiles() } ?: return
+            val files = interruptibleSmbCall { dir.listFiles() }
+                ?: throw java.io.IOException("SMB returned no listing for $folderUrlStr")
             val subDirs = mutableListOf<SmbFile>()
             val folderItems = mutableListOf<GalleryItem>()
             for (file in files) {
@@ -457,7 +429,6 @@ object SmbScanner {
             if (folderItems.isNotEmpty()) {
                 onItemsFound?.invoke(emptyList(), folderItems, emptyList())
             }
-            updatedFolderCache[folderUrlStr] = currentMod
             if (subDirs.isNotEmpty()) {
                 withContext(Dispatchers.IO) {
                     subDirs.chunked(6).map { batch ->
@@ -465,8 +436,7 @@ object SmbScanner {
                             batch.forEach { file ->
                                 checkControl()
                                 val nextFolderName = Uri.parse(file.url.toString()).lastPathSegment?.trim('/') ?: file.name.trim('/')
-                                val lastMod = smbMetadataOr(-1L) { file.lastModified() }
-                                scanFileTreeForGallerySmb(context, file, nextFolderName, gallery, settings, onProgress, checkControl, knownUris, folderCache, updatedFolderCache, lastMod, onItemsFound)
+                                scanFileTreeForGallerySmb(context, file, nextFolderName, gallery, settings, onProgress, checkControl, knownUris, onItemsFound)
                             }
                         }
                     }.joinAll()
@@ -523,21 +493,13 @@ object SmbScanner {
         onProgress: (String) -> Unit,
         checkControl: suspend () -> Unit,
         knownUris: Set<String> = emptySet(),
-        folderCache: Map<String, Long> = emptyMap(),
-        updatedFolderCache: MutableMap<String, Long> = java.util.concurrent.ConcurrentHashMap(),
-        knownLastModified: Long = -1L,
         onItemsFound: (suspend (List<Comic>, List<GalleryItem>, List<Movie>) -> Unit)? = null,
     ) {
         checkControl()
         val folderUrlStr = dir.url.toString()
-        val currentMod = if (knownLastModified != -1L) knownLastModified else smbLastModified(dir)
-        val cachedMod = folderCache[folderUrlStr]
-        if (cachedMod != null && cachedMod == currentMod && currentMod > 0) {
-            updatedFolderCache[folderUrlStr] = currentMod
-            return
-        }
         try {
-            val files = interruptibleSmbCall { dir.listFiles() } ?: return
+            val files = interruptibleSmbCall { dir.listFiles() }
+                ?: throw java.io.IOException("SMB returned no listing for $folderUrlStr")
             val subDirs = mutableListOf<SmbFile>()
             val folderMovies = mutableListOf<Movie>()
             for (file in files) {
@@ -575,7 +537,6 @@ object SmbScanner {
             if (folderMovies.isNotEmpty()) {
                 onItemsFound?.invoke(emptyList(), emptyList(), folderMovies)
             }
-            updatedFolderCache[folderUrlStr] = currentMod
             if (subDirs.isNotEmpty()) {
                 withContext(Dispatchers.IO) {
                     subDirs.chunked(6).map { batch ->
@@ -583,8 +544,7 @@ object SmbScanner {
                             batch.forEach { file ->
                                 checkControl()
                                 val nextFolderName = Uri.parse(file.url.toString()).lastPathSegment?.trim('/') ?: file.name.trim('/')
-                                val lastMod = smbMetadataOr(-1L) { file.lastModified() }
-                                scanFileTreeForMoviesSmb(context, file, nextFolderName, movies, settings, onProgress, checkControl, knownUris, folderCache, updatedFolderCache, lastMod, onItemsFound)
+                                scanFileTreeForMoviesSmb(context, file, nextFolderName, movies, settings, onProgress, checkControl, knownUris, onItemsFound)
                             }
                         }
                     }.joinAll()
