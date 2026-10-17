@@ -136,6 +136,7 @@ class SettingsViewModel @Inject constructor(
     fun setAutoManageCache(enabled: Boolean) = updateSettings { it.copy(autoManageCache = enabled) }
     fun setDefaultReaderMode(mode: String) = updateSettings { it.copy(defaultReaderMode = mode) }
     fun setComicPageTransition(transition: String) = updateSettings { it.copy(comicPageTransition = transition) }
+    fun setGalleryTransition(transition: String) = updateSettings { it.copy(galleryTransition = transition) }
     fun setReaderVolumeKeysNavigation(enabled: Boolean) = updateSettings { it.copy(readerVolumeKeysNavigation = enabled) }
     fun setDefaultVideoZoomMode(mode: Int) = updateSettings { it.copy(defaultVideoZoomMode = mode) }
     fun setDefaultVideoOrientation(orientation: Int) = updateSettings { it.copy(defaultVideoOrientation = orientation) }

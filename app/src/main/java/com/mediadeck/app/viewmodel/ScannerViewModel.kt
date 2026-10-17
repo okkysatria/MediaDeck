@@ -165,7 +165,10 @@ class ScannerViewModel @Inject constructor(
     }
     fun autoScanLibrary(isManualRefresh: Boolean = false, scanType: String = "") {
         val target = "AUTO_ALL_$scanType"
-        if (isManualRefresh && scanType.isNotEmpty()) _navigationRequest.tryEmit(scanType)
+        if (isManualRefresh) {
+            _isManualRefreshing.value = true
+            ScannerStateManager.setManualRefreshing(true)
+        }
         viewModelScope.launch {
             activeScanJob?.cancelAndJoin()
             isScanCancelled = false
@@ -175,22 +178,36 @@ class ScannerViewModel @Inject constructor(
                     _currentScanTarget.value = target
                     val settings = repository.getSettingsDirect()
                     val lang = settings.language
-                    if (!isManualRefresh && !settings.autoScanOnStart) return@withLock
-                    if (isManualRefresh) _isManualRefreshing.value = true
+                    if (!isManualRefresh && !settings.autoScanOnStart) {
+                        _isManualRefreshing.value = false
+                        ScannerStateManager.setManualRefreshing(false)
+                        return@withLock
+                    }
                     _isScanActive.value = true
                     resetCounters()
                     _scanProgress.value = com.mediadeck.app.util.i18n.translate(lang, "Starting scan...", "Memulai pemindaian...")
                     val updatedFolderCache = java.util.concurrent.ConcurrentHashMap<String, Long>()
                     val foldersModified = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
                     val failedFolders = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
-                    val allConfiguredFolders = (settings.comicFolders + settings.galleryFolders + settings.movieFolders).split(",").filter { it.isNotEmpty() }
-                    if (allConfiguredFolders.isEmpty()) {
+                    val targetFolders = when (scanType) {
+                        "comics" -> settings.comicFolders
+                        "gallery" -> settings.galleryFolders
+                        "movies" -> settings.movieFolders
+                        else -> settings.comicFolders + "," + settings.galleryFolders + "," + settings.movieFolders
+                    }.split(",").filter { it.isNotEmpty() }
+                    if (targetFolders.isEmpty()) {
+                        val sectionName = when (scanType) {
+                            "comics" -> translate(lang, "comics", "komik")
+                            "gallery" -> translate(lang, "gallery", "galeri")
+                            "movies" -> translate(lang, "movies", "film")
+                            else -> translate(lang, "library", "pustaka")
+                        }
                         _scanProgress.value = translate(
                             lang,
-                            "No folders added. Go to Settings -> Scan to add folders.",
-                            "Belum ada folder. Ke Pengaturan -> Pindai untuk tambah folder."
+                            "No folders added for $sectionName. Go to Settings -> Scan to add folders.",
+                            "Belum ada folder untuk $sectionName. Ke Pengaturan -> Pindai untuk tambah folder."
                         )
-                        delay(3000)
+                        delay(2500)
                         _isScanActive.value = false
                         _isManualRefreshing.value = false
                         _currentScanTarget.value = null
@@ -205,8 +222,8 @@ class ScannerViewModel @Inject constructor(
                                 repository.getAllComicsDirect().associateBy { it.folderUri.removeSuffix("/") }.toMutableMap()
                             )
                         }
-                        val galleryByFolder = allExistingGallery.values.groupBy { 
-                            it.uri.substringBeforeLast('/', "") + "/" 
+                        val galleryByFolder = allExistingGallery.values.groupBy {
+                            it.uri.substringBeforeLast('/', "") + "/"
                         }.toMutableMap()
                         val folderCache = if (isManualRefresh) emptyMap() else withContext(Dispatchers.IO) { repository.getScannedFolders().associateBy { it.folderUri.removeSuffix("/") }.mapValues { it.value.lastModified } }
                         val dedupeTracker = ScanDedupeTracker()
@@ -578,8 +595,8 @@ class ScannerViewModel @Inject constructor(
                     _scanProgress.value = com.mediadeck.app.util.i18n.translate(lang, "Starting scan...", "Memulai pemindaian...")
                     try {
                         val (allExistingGallery, allExistingMovies, allExistingComics) = withContext(Dispatchers.IO) { Triple(repository.getAllGalleryItemsDirect().associateBy { it.uri }.toMutableMap(), repository.getAllMoviesDirect().associateBy { it.uri }.toMutableMap(), repository.getAllComicsDirect().associateBy { it.folderUri.removeSuffix("/") }.toMutableMap()) }
-                        val galleryByFolder = allExistingGallery.values.groupBy { 
-                            it.uri.substringBeforeLast('/', "") + "/" 
+                        val galleryByFolder = allExistingGallery.values.groupBy {
+                            it.uri.substringBeforeLast('/', "") + "/"
                         }.toMutableMap()
                         val dedupeTracker = ScanDedupeTracker()
                         val mapMutex = Mutex()
@@ -629,13 +646,13 @@ class ScannerViewModel @Inject constructor(
                         }
                         val safePrefix = folderUriStr.removeSuffix("/").let { if (it.endsWith("/")) it else "$it/" }
                         val currentFolders = withContext(Dispatchers.IO) {
-                            (repository.getAllMoviesDirect().filter { 
+                            (repository.getAllMoviesDirect().filter {
                                 val uP = if (it.uri.endsWith("/")) it.uri else "${it.uri}/"
-                                uP.startsWith(safePrefix) 
+                                uP.startsWith(safePrefix)
                             }.map { com.mediadeck.app.util.media.MediaFolderIdentity.key(it.folderUri, it.uri) } +
-                                    repository.getAllGalleryItemsDirect().filter { 
+                                    repository.getAllGalleryItemsDirect().filter {
                                         val uP = if (it.uri.endsWith("/")) it.uri else "${it.uri}/"
-                                        uP.startsWith(safePrefix) 
+                                        uP.startsWith(safePrefix)
                                     }.map { com.mediadeck.app.util.media.MediaFolderIdentity.key(it.folderUri, it.uri) }).distinct()
                         }
                         currentFolders.forEach { folderKey ->

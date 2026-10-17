@@ -28,7 +28,7 @@ import java.io.FilterInputStream
 import java.util.LinkedHashMap
 import java.util.concurrent.ConcurrentHashMap
 object VideoThumbnailHelper {
-    private const val MAX_THUMB_DIMENSION = 640     
+    private const val MAX_THUMB_DIMENSION = 640
     private const val EXPLORE_THUMB_DIMENSION = MAX_THUMB_DIMENSION
     const val THUMBNAIL_JPEG_QUALITY = 78
     private val entryLock = CacheEntryLock()

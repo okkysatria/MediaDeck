@@ -32,6 +32,7 @@ data class AppSettings(
     val cachePurgeTargetMB: Int = 100,
     val defaultReaderMode: String = "vertical",
     val comicPageTransition: String = "curl",
+    val galleryTransition: String = "slide",
     val readerVolumeKeysNavigation: Boolean = true,
     val defaultVideoZoomMode: Int = 0,
     val defaultVideoSpeed: Float = 1.0f,

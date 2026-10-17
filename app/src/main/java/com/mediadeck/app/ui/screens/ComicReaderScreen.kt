@@ -1,100 +1,91 @@
 package com.mediadeck.app.ui.screens
 import android.net.Uri
-import coil3.imageLoader
-import coil3.request.crossfade
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
-import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
-import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.MenuBook
-import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.Bookmark
-import androidx.compose.material.icons.filled.BookmarkBorder
-import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudOff
-import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.FormatLineSpacing
-import androidx.compose.material.icons.filled.FormatListNumbered
-import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Opacity
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.SortByAlpha
-import androidx.compose.material.icons.filled.SwapHoriz
-import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -102,47 +93,66 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.painter.Painter
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
-import coil3.compose.rememberAsyncImagePainter
 import coil3.compose.SubcomposeAsyncImage
+import coil3.compose.rememberAsyncImagePainter
+import coil3.imageLoader
 import coil3.request.ImageRequest
+import coil3.request.crossfade
 import com.mediadeck.app.data.comic.ComicPage
 import com.mediadeck.app.data.settings.AppSettings
 import com.mediadeck.app.ui.components.ZoomableMediaBox
 import com.mediadeck.app.util.i18n.t
 import com.mediadeck.app.util.scan.ScannerStateManager
 import com.mediadeck.app.viewmodel.ComicViewModel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.Job
-import kotlin.math.sin
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.sin
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
-private val ReaderBarBackground = Color.Black.copy(alpha = 0.7f)
-private val ReaderPanelBackground = Color.Black.copy(alpha = 0.96f)
+private val ReaderAccent = Color(0xFF4DA3FF)
+private val ReaderBar = Color(0xFF23262E)
+private val ReaderChip = Color(0xFF2D3039)
+private val ReaderPanel = Color(0xFF131519)
+private val ReaderCurrentRow = Color(0xFF1D2A3C)
+private val ReaderOnAccent = Color(0xFF0B1B2E)
+private val ReaderMuted = Color(0xFFA0A5AF)
+private val ReaderDanger = Color(0xFFFF6B7A)
+
+
+private const val DEFAULT_PAGE_HEIGHT_PX = 1200
+
+private const val PROGRESS_SAVE_DELAY_MS = 250L
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ComicReaderScreen(
@@ -170,59 +180,77 @@ fun ComicReaderScreen(
             }
         }
     }
+    var readerMode by rememberSaveable { mutableStateOf(settings.defaultReaderMode) }
+    var labelMode by rememberSaveable { mutableStateOf("filename") }
+    var reversePages by rememberSaveable { mutableStateOf(false) }
+    var showBars by rememberSaveable { mutableStateOf(!settings.autoHideReaderUi) }
+    val focusRequester = remember { FocusRequester() }
+    fun restoreFocus() {
+        runCatching { focusRequester.requestFocus() }
+    }
+    LaunchedEffect(Unit) { restoreFocus() }
+
     if (activeComic == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
         }
         return
     }
-    var readerMode by remember { mutableStateOf(settings.defaultReaderMode) }
-    var pageSortBy by remember { mutableStateOf("filename") }
-    var reversePages by remember { mutableStateOf(false) }
-    var showBars by remember { mutableStateOf(!settings.autoHideReaderUi) }
-    val focusRequester = remember { FocusRequester() }
-    fun restoreFocus() {
-        runCatching { focusRequester.requestFocus() }
-    }
-    LaunchedEffect(Unit) { restoreFocus() }
-    val processedPages = remember(pages, pageSortBy, reversePages) {
-        val sorted = when (pageSortBy) {
-            "filename" -> pages.sortedWith { a, b ->
-                val byName = naturalCompare(pageFileName(a), pageFileName(b))
-                if (byName != 0) byName else a.pageIndex.compareTo(b.pageIndex)
+
+    val processedPages = remember(pages, reversePages, readerMode) {
+        val sorted = pages
+            .map { page -> page to pageFileName(page) }
+            .sortedWith { (pa, nameA), (pb, nameB) ->
+                val byName = naturalCompare(nameA, nameB)
+                if (byName != 0) byName else pa.pageIndex.compareTo(pb.pageIndex)
             }
-            else -> pages.sortedBy { it.pageIndex }
-        }
-        if (reversePages) sorted.reversed() else sorted
+            .map { it.first }
+        if (reversePages && readerMode == "horizontal_single") sorted.reversed() else sorted
     }
     var pendingVolumeTarget by remember { mutableStateOf<Int?>(null) }
+    val isDoubleRtl = reversePages && readerMode == "horizontal_double"
     fun pageForVolumeStep(step: Int): ComicPage? {
         val baseSlot = pendingVolumeTarget ?: ((activeComic?.currentPage ?: 1) - 1).coerceAtLeast(0)
         val currentIndex = processedPages.indexOfFirst { it.pageIndex == baseSlot }
         val currentSlot = currentIndex.takeIf { it >= 0 } ?: 0
-        if (readerMode != "horizontal_double") return processedPages.getOrNull(currentSlot + step)
+        val direction = if (reversePages && readerMode == "horizontal_single") -step else step
+        if (readerMode != "horizontal_double") return processedPages.getOrNull(currentSlot + direction)
         val spreadCount = processedPages.size / 2 + 1
-        val targetSpread = bookSpreadForSlot(currentSlot) + step
+        val targetSpread = bookSpreadForSlot(currentSlot) + (if (isDoubleRtl) -step else step)
         if (targetSpread !in 0 until spreadCount) return null
-        return processedPages.getOrNull(rightPageSlotForSpread(targetSpread))
-            ?: processedPages.getOrNull(leftPageSlotForSpread(targetSpread))
+        return processedPages.getOrNull(rightPageSlotForSpread(targetSpread, isDoubleRtl))
+            ?: processedPages.getOrNull(leftPageSlotForSpread(targetSpread, isDoubleRtl))
     }
-    var showSidebar by remember { mutableStateOf(false) }
+    var showDirectory by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
     var jumpToPage by remember { mutableStateOf<Int?>(null) }
     var animateJumpToPage by remember { mutableStateOf(false) }
     var resetProgressRequested by remember { mutableStateOf(false) }
     BackHandler {
-        if (showSidebar) showSidebar = false else onClose()
+        if (showDirectory) {
+            showDirectory = false
+        } else if (showSettings) {
+            showSettings = false
+        } else {
+            onClose()
+        }
     }
 
     LaunchedEffect(activeComic?.currentPage, jumpToPage) {
         val target = pendingVolumeTarget
-        if (target != null && jumpToPage == null && activeComic?.currentPage == target + 1) {
-            pendingVolumeTarget = null
+        if (target != null && jumpToPage == null) {
+            val currentPageIndex = (activeComic?.currentPage ?: 1) - 1
+            val reached = if (readerMode == "horizontal_double") {
+                val currentIdx = processedPages.indexOfFirst { it.pageIndex == currentPageIndex }
+                val targetIdx = processedPages.indexOfFirst { it.pageIndex == target }
+                currentIdx >= 0 && targetIdx >= 0 && bookSpreadForSlot(currentIdx) == bookSpreadForSlot(targetIdx)
+            } else {
+                currentPageIndex == target
+            }
+            if (reached) pendingVolumeTarget = null
         }
     }
-    LaunchedEffect(readerMode, pageSortBy, reversePages) { pendingVolumeTarget = null }
-
+    LaunchedEffect(readerMode, reversePages) { pendingVolumeTarget = null }
 
     LaunchedEffect(resetProgressRequested, jumpToPage) {
         if (resetProgressRequested && jumpToPage == null) {
@@ -240,14 +268,40 @@ fun ComicReaderScreen(
         }
     }
     val sidebarListState = rememberLazyListState()
-    LaunchedEffect(showSidebar) { if (!showSidebar) restoreFocus() }
-    LaunchedEffect(showSidebar, activeComic?.currentPage) {
-        if (showSidebar) {
+    LaunchedEffect(showDirectory) { if (!showDirectory) restoreFocus() }
+    LaunchedEffect(showSettings) { if (!showSettings) restoreFocus() }
+    LaunchedEffect(showBars) { if (!showBars) restoreFocus() }
+    LaunchedEffect(showDirectory, activeComic?.currentPage) {
+        if (showDirectory) {
             val currentSlot = ((activeComic?.currentPage ?: 1) - 1).coerceAtLeast(0)
             val targetIdx = processedPages.indexOfFirst { it.pageIndex == currentSlot }
             if (targetIdx >= 0 && targetIdx < processedPages.size) {
                 sidebarListState.scrollToItem(targetIdx)
             }
+        }
+    }
+    val currentSlot = ((activeComic?.currentPage ?: 1) - 1).coerceAtLeast(0)
+    val currentProcessedIndex = processedPages.indexOfFirst { it.pageIndex == currentSlot }.takeIf { it >= 0 } ?: 0
+    val totalPages = processedPages.size.coerceAtLeast(1)
+    val currentPageDisplay = (currentProcessedIndex + 1).coerceAtLeast(1)
+
+    val bottomPageText = remember(activeComic?.currentPage, activeComic?.totalPages, readerMode, processedPages, isDoubleRtl) {
+        if (readerMode == "horizontal_double" && processedPages.isNotEmpty()) {
+            val currIdx = processedPages.indexOfFirst { it.pageIndex == currentSlot }.coerceAtLeast(0)
+            val spread = bookSpreadForSlot(currIdx)
+            val leftSlot = leftPageSlotForSpread(spread, isDoubleRtl)
+            val rightSlot = rightPageSlotForSpread(spread, isDoubleRtl)
+            val pLeft = leftSlot.takeIf { it in processedPages.indices }?.let { it + 1 }
+            val pRight = rightSlot.takeIf { it in processedPages.indices }?.let { it + 1 }
+            if (pLeft != null && pRight != null) {
+                val p1 = minOf(pLeft, pRight)
+                val p2 = maxOf(pLeft, pRight)
+                "$p1–$p2"
+            } else {
+                "${pLeft ?: pRight ?: currentPageDisplay}"
+            }
+        } else {
+            "$currentPageDisplay"
         }
     }
     Box(
@@ -257,13 +311,17 @@ fun ComicReaderScreen(
             .focusRequester(focusRequester)
             .focusable()
             .onKeyEvent { keyEvent ->
-                if (settings.readerVolumeKeysNavigation && keyEvent.type == KeyEventType.KeyDown) {
-                    when (keyEvent.nativeKeyEvent.keyCode) {
-                        android.view.KeyEvent.KEYCODE_VOLUME_DOWN -> { jumpByVolumeStep(1); true }
-                        android.view.KeyEvent.KEYCODE_VOLUME_UP -> { jumpByVolumeStep(-1); true }
-                        else -> false
+                if (settings.readerVolumeKeysNavigation) {
+                    val keyCode = keyEvent.nativeKeyEvent.keyCode
+                    if (keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN || keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP) {
+                        if (keyEvent.type == KeyEventType.KeyDown && keyEvent.nativeKeyEvent.repeatCount == 0) {
+                            val step = if (keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN) 1 else -1
+                            jumpByVolumeStep(step)
+                        }
+                        return@onKeyEvent true
                     }
-                } else false
+                }
+                false
             },
     ) {
         if (processedPages.isEmpty()) {
@@ -297,6 +355,7 @@ fun ComicReaderScreen(
                     jumpToPage = jumpToPage,
                     onJumpHandled = { jumpToPage = null; animateJumpToPage = false },
                     settings = settings,
+                    showScrollbar = showBars,
                 )
                 "horizontal_single" -> HorizontalSingleReader(
                     pages = processedPages,
@@ -319,6 +378,7 @@ fun ComicReaderScreen(
                     pageTransition = settings.comicPageTransition,
                     animateJumpToPage = animateJumpToPage,
                     onJumpHandled = { jumpToPage = null; animateJumpToPage = false },
+                    isRtl = isDoubleRtl,
                 )
             }
         }
@@ -328,198 +388,315 @@ fun ComicReaderScreen(
             exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
             modifier = Modifier.align(Alignment.TopCenter),
         ) {
-            TopAppBar(
-                title = {
-                    Text(
-                        activeComic?.title ?: t("READ COMIC", "BACA KOMIK"),
-                        fontSize = 18.sp,
-                        maxLines = 1,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = Color.White,
-                        modifier = Modifier.basicMarquee()
-                    )
-                },
-                navigationIcon = {
+            Surface(
+                color = ReaderBar,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .height(56.dp)
+                        .padding(horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     IconButton(onClick = onClose) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = t("Close", "Tutup"), tint = Color.White)
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = t("Close", "Tutup"),
+                            tint = Color.White,
+                        )
                     }
-                },
-                actions = {
-                    var showSortMenu by remember { mutableStateOf(false) }
-                    LaunchedEffect(showSortMenu) { if (!showSortMenu) restoreFocus() }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box {
-                            IconButton(onClick = { showSortMenu = !showSortMenu }) {
-                                Icon(Icons.Default.MoreVert, contentDescription = t("Reader options", "Opsi pembaca"), tint = Color.White)
-                            }
-                            ReaderDropdownMenu(
-                                expanded = showSortMenu,
-                                onDismissRequest = { showSortMenu = false },
-                            ) {
-                            val isReadLater = activeComic?.isReadLater == true
-                            val isFavorite = activeComic?.isFavorite == true
-                            ReaderMenuItem(
-                                text = if (isReadLater) t("Remove from Read Later", "Hapus dari Nanti Dibaca") else t("Read Later", "Nanti Dibaca"),
-                                icon = if (isReadLater) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                                onClick = { activeComic?.let { viewModel.toggleComicReadLater(it) }; showSortMenu = false },
-                            )
-                            ReaderMenuItem(
-                                text = if (isFavorite) t("Remove Favorite", "Hapus Favorit") else t("Add to Favorites", "Tambah ke Favorit"),
-                                icon = if (isFavorite) Icons.Filled.Favorite else Icons.Default.FavoriteBorder,
-                                iconTint = if (isFavorite) Color.Red else Color.White,
-                                onClick = { activeComic?.let { viewModel.toggleComicFavorite(it) }; showSortMenu = false },
-                            )
-                            ReaderMenuDivider()
-                            ReaderMenuHeader(t("Page order", "Urutan halaman"))
-                            ReaderMenuItem(
-                                text = t("Filename", "Nama File"),
-                                icon = Icons.Default.SortByAlpha,
-                                selected = pageSortBy == "filename",
-                                onClick = { pageSortBy = "filename"; showSortMenu = false },
-                            )
-                            ReaderMenuItem(
-                                text = t("Index", "Indeks"),
-                                icon = Icons.Default.FormatListNumbered,
-                                selected = pageSortBy == "index",
-                                onClick = { pageSortBy = "index"; showSortMenu = false },
-                            )
-                            ReaderMenuItem(
-                                text = t("Reverse", "Terbalik"),
-                                icon = Icons.Default.SwapVert,
-                                selected = reversePages,
-                                onClick = { reversePages = !reversePages; showSortMenu = false },
-                            )
-                            ReaderMenuDivider()
-                            ReaderMenuHeader(t("Page transition", "Transisi halaman"))
-                            listOf(
-                                Triple("curl", t("Page Curl", "Page Curl"), Icons.Default.AutoStories),
-                                Triple("slide", t("Slide", "Geser"), Icons.Default.SwapHoriz),
-                                Triple("fade", t("Fade", "Memudar"), Icons.Default.Opacity),
-                            ).forEach { (value, label, icon) ->
-                                ReaderMenuItem(
-                                    text = label,
-                                    icon = icon,
-                                    selected = settings.comicPageTransition == value,
-                                    onClick = { viewModel.setComicPageTransition(value); showSortMenu = false },
-                                )
-                            }
-                            ReaderMenuDivider()
-                            ReaderMenuItem(
-                                text = t("Reset Progress", "Reset Progres"),
-                                icon = Icons.Default.History,
-                                tint = MaterialTheme.colorScheme.error,
-                                onClick = {
-                                    pendingVolumeTarget = null
-                                    animateJumpToPage = false
-                                    resetProgressRequested = true
-                                    jumpToPage = processedPages.firstOrNull()?.pageIndex
-                                    showSortMenu = false
-                                },
-                            )
-                            }
-                        }
-                        IconButton(onClick = { showSidebar = !showSidebar }) {
-                            Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = t("Page directory", "Daftar halaman"), tint = Color.White)
-                        }
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 4.dp),
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Text(
+                            text = activeComic?.title ?: t("Comic", "Komik"),
+                            fontSize = 17.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                        )
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = ReaderBarBackground),
-            )
+                    IconButton(onClick = {
+                        showDirectory = !showDirectory
+                        showSettings = false
+                    }) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.MenuBook,
+                            contentDescription = t("Page Directory", "Daftar Halaman"),
+                            tint = Color.White,
+                        )
+                    }
+                    IconButton(onClick = {
+                        showSettings = !showSettings
+                        showDirectory = false
+                    }) {
+                        Icon(
+                            Icons.Default.MoreVert,
+                            contentDescription = t("Reader Settings", "Pengaturan Pembaca"),
+                            tint = Color.White,
+                        )
+                    }
+                }
+            }
         }
+
         AnimatedVisibility(
             visible = showBars,
             enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
             exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter),
         ) {
+            val isLandscape = LocalConfiguration.current.orientation ==
+                    android.content.res.Configuration.ORIENTATION_LANDSCAPE
             Surface(
-                color = ReaderBarBackground,
+                color = ReaderBar,
                 contentColor = Color.White,
-                modifier = Modifier.fillMaxWidth().navigationBarsPadding(),
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 16.dp, vertical = if (isLandscape) 2.dp else 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        text = "${(activeComic?.currentPage ?: 0).coerceAtLeast(1)} / ${(activeComic?.totalPages ?: 0).coerceAtLeast(1)}",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White.copy(alpha = 0.8f),
-                        modifier = Modifier.weight(1f),
-                    )
-                    val readerModes = listOf(
-                        Triple("vertical", Icons.Default.FormatLineSpacing, t("Vertical", "Vertikal")),
-                        Triple("horizontal_single", Icons.Default.Description, t("Single page", "Satu halaman")),
-                        Triple("horizontal_double", Icons.Default.AutoStories, t("Two pages", "Dua halaman")),
-                    )
-                    SingleChoiceSegmentedButtonRow {
-                        readerModes.forEachIndexed { index, (mode, icon, label) ->
-                            SegmentedButton(
-                                selected = readerMode == mode,
-                                onClick = { readerMode = mode },
-                                shape = SegmentedButtonDefaults.itemShape(index = index, count = readerModes.size),
-                                icon = {},
+                    Row(
+                        modifier = Modifier
+                            .height(44.dp)
+                            .clip(RoundedCornerShape(22.dp))
+                            .background(ReaderChip)
+                            .padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = bottomPageText,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                        )
+                        Text(
+                            text = " / $totalPages",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = ReaderMuted,
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(26.dp))
+                            .background(ReaderChip)
+                            .padding(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        listOf("vertical", "horizontal_single", "horizontal_double").forEach { mode ->
+                            val isSelected = readerMode == mode
+                            Box(
+                                modifier = Modifier
+                                    .size(width = 56.dp, height = 44.dp)
+                                    .clip(RoundedCornerShape(22.dp))
+                                    .background(if (isSelected) ReaderAccent else Color.Transparent)
+                                    .clickable { readerMode = mode },
+                                contentAlignment = Alignment.Center,
                             ) {
-                                Icon(icon, contentDescription = label, modifier = Modifier.size(19.dp))
+                                val tint = if (isSelected) ReaderOnAccent else Color.White
+                                when (mode) {
+                                    "vertical" -> VerticalModeIcon(tint = tint)
+                                    "horizontal_single" -> SinglePageModeIcon(tint = tint)
+                                    "horizontal_double" -> DoublePageModeIcon(tint = tint)
+                                }
                             }
                         }
                     }
-                    Spacer(Modifier.weight(1f))
                 }
             }
         }
-        if (showSidebar) {
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.5f)).clickable { showSidebar = false })
+        if (showDirectory || showSettings) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.6f))
+                    .clickable {
+                        showDirectory = false
+                        showSettings = false
+                    }
+            )
         }
-        AnimatedVisibility(
-            visible = showSidebar,
-            enter = slideInHorizontally(initialOffsetX = { it }),
-            exit = slideOutHorizontally(targetOffsetX = { it }),
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .widthIn(max = 360.dp)
-                .fillMaxWidth(0.82f)
-                .fillMaxHeight()
-                .background(ReaderPanelBackground)
-                .statusBarsPadding()
-                .navigationBarsPadding(),
+
+        ReaderSidePanel(
+            visible = showDirectory,
+            title = t("Page Directory", "Daftar Halaman"),
+            onClose = { showDirectory = false },
         ) {
-            Column {
-                Text(t("Page Directory", "Daftar Halaman"), color = Color.White, modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp), fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
-                HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
-                LazyColumn(state = sidebarListState, modifier = Modifier.weight(1f)) {
-                    items(processedPages, key = { it.pageIndex }) { page ->
-                        val isCurrent = ((activeComic?.currentPage ?: 1) - 1).coerceAtLeast(0) == page.pageIndex
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(if (isCurrent) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else Color.Transparent)
-                                .clickable {
-                                    pendingVolumeTarget = null
-                                    animateJumpToPage = false
-                                    viewModel.updateReadingProgress(page.pageIndex + 1)
-                                    jumpToPage = page.pageIndex
-                                    showSidebar = false
-                                }
-                                .padding(8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            AsyncImage(
-                                model = Uri.parse(page.pageUri),
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.size(50.dp, 70.dp).clip(RoundedCornerShape(4.dp)).background(Color.DarkGray),
-                            )
-                            Spacer(Modifier.width(12.dp))
-                            Text(
-                                t("p.${page.pageIndex + 1}", "hal.${page.pageIndex + 1}"),
-                                color = if (isCurrent) MaterialTheme.colorScheme.primary else Color.White,
-                                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
-                                fontSize = 13.sp,
-                            )
+            LazyColumn(
+                state = sidebarListState,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 16.dp, bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                items(processedPages, key = { it.pageIndex }) { page ->
+                    val isCurrent = ((activeComic?.currentPage ?: 1) - 1).coerceAtLeast(0) == page.pageIndex
+                    val pagePosition = processedPages.indexOfFirst { it.pageIndex == page.pageIndex }.takeIf { it >= 0 } ?: 0
+                    val labelText = remember(page.pageUri, page.pageIndex, labelMode, pagePosition) {
+                        if (labelMode == "index") {
+                            "p.${pagePosition + 1}"
+                        } else {
+                            val rawName = (Uri.parse(page.pageUri).lastPathSegment ?: page.pageUri).substringAfterLast('/')
+                            val cleanName = rawName.substringBeforeLast('.')
+                            if (cleanName.isNotBlank() && cleanName.length <= 15) cleanName else "p.${pagePosition + 1}"
                         }
                     }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(if (isCurrent) ReaderCurrentRow else Color.Transparent)
+                            .clickable {
+                                pendingVolumeTarget = null
+                                val animated = readerMode == "horizontal_single" || readerMode == "horizontal_double"
+                                animateJumpToPage = animated
+                                if (!animated) viewModel.updateReadingProgress(page.pageIndex + 1)
+                                jumpToPage = page.pageIndex
+                                showDirectory = false
+                            }
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        AsyncImage(
+                            model = Uri.parse(page.pageUri),
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(56.dp, 80.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(ReaderBar),
+                        )
+                        Spacer(Modifier.width(16.dp))
+                        Text(
+                            text = labelText,
+                            color = if (isCurrent) ReaderAccent else Color.White,
+                            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
+                            fontSize = 16.sp,
+                        )
+                    }
+                }
+            }
+        }
+
+        ReaderSidePanel(
+            visible = showSettings,
+            title = t("Reader Settings", "Pengaturan Pembaca"),
+            onClose = { showSettings = false },
+        ) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp),
+            ) {
+                Spacer(Modifier.height(8.dp))
+                val isReadLater = activeComic?.isReadLater == true
+                ReaderActionRow(
+                    icon = if (isReadLater) Icons.Default.Bookmark else Icons.Outlined.BookmarkBorder,
+                    text = if (isReadLater) t("Remove from Read Later", "Hapus dari Nanti Dibaca") else t("Read Later", "Nanti Dibaca"),
+                    onClick = { activeComic?.let { viewModel.toggleComicReadLater(it) } },
+                )
+                Spacer(Modifier.height(8.dp))
+                val isFavorite = activeComic?.isFavorite == true
+                ReaderActionRow(
+                    icon = if (isFavorite) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
+                    text = if (isFavorite) t("Remove Favorite", "Hapus Favorit") else t("Add to Favorites", "Tambah ke Favorit"),
+                    onClick = { activeComic?.let { viewModel.toggleComicFavorite(it) } },
+                )
+
+                Spacer(Modifier.height(20.dp))
+                ReaderSectionLabel(t("PAGE EFFECT", "EFEK HALAMAN"))
+                Spacer(Modifier.height(8.dp))
+                ReaderSegmented(
+                    options = listOf(
+                        "curl" to t("Page Curl", "Page Curl"),
+                        "slide" to t("Slide", "Geser"),
+                        "fade" to t("Fade", "Memudar"),
+                    ),
+                    selected = settings.comicPageTransition,
+                    onSelect = { viewModel.setComicPageTransition(it) },
+                )
+
+                if (readerMode != "vertical") {
+                    Spacer(Modifier.height(20.dp))
+                    ReaderSectionLabel(t("READING DIRECTION", "ARAH MEMBACA"))
+                    Spacer(Modifier.height(8.dp))
+                    ReaderSegmented(
+                        options = listOf(
+                            false to t("Left to right", "Kiri ke kanan"),
+                            true to t("Right to left", "Kanan ke kiri"),
+                        ),
+                        selected = reversePages,
+                        onSelect = { reversePages = it },
+                    )
+                }
+
+                Spacer(Modifier.height(20.dp))
+                ReaderSectionLabel(t("PAGE LABEL", "LABEL HALAMAN"))
+                Spacer(Modifier.height(8.dp))
+                ReaderSegmented(
+                    options = listOf(
+                        "filename" to t("Filename", "Nama file"),
+                        "index" to t("Index", "Indeks"),
+                    ),
+                    selected = labelMode,
+                    onSelect = { labelMode = it },
+                )
+                Spacer(Modifier.height(16.dp))
+            }
+
+            Surface(
+                shape = RoundedCornerShape(26.dp),
+                color = Color.Transparent,
+                border = BorderStroke(2.dp, ReaderDanger),
+                modifier = Modifier
+                    .padding(horizontal = 20.dp)
+                    .padding(top = 12.dp, bottom = 20.dp)
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .clickable {
+                        pendingVolumeTarget = null
+                        animateJumpToPage = false
+                        resetProgressRequested = true
+                        jumpToPage = processedPages.firstOrNull()?.pageIndex
+                        showSettings = false
+                    },
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.RestartAlt,
+                        contentDescription = null,
+                        tint = ReaderDanger,
+                        modifier = Modifier.size(22.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = t("Reset Progress", "Reset Progres"),
+                        color = ReaderDanger,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 16.sp,
+                    )
                 }
             }
         }
@@ -536,6 +713,7 @@ fun VerticalReader(
     jumpToPage: Int?,
     onJumpHandled: () -> Unit,
     settings: AppSettings,
+    showScrollbar: Boolean = false,
 ) {
     val listState = rememberLazyListState()
     var scale by remember { mutableFloatStateOf(1f) }
@@ -562,11 +740,26 @@ fun VerticalReader(
             onJumpHandled()
         }
     }
-    val firstVisibleIndex by remember { derivedStateOf { listState.firstVisibleItemIndex } }
-    val firstVisibleOffset by remember { derivedStateOf { listState.firstVisibleItemScrollOffset } }
-    LaunchedEffect(firstVisibleIndex, firstVisibleOffset, isInitialPositionRestored) {
-        if (isInitialPositionRestored && pages.isNotEmpty() && firstVisibleIndex < pages.size) {
-            onProgressUpdate(pages[firstVisibleIndex].pageIndex, firstVisibleOffset)
+
+
+    val latestPages by rememberUpdatedState(pages)
+    val latestOnProgressUpdate by rememberUpdatedState(onProgressUpdate)
+    LaunchedEffect(listState, isInitialPositionRestored) {
+        if (!isInitialPositionRestored) return@LaunchedEffect
+        snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
+            .collectLatest { (index, offset) ->
+                delay(PROGRESS_SAVE_DELAY_MS)
+                val current = latestPages
+                if (index < current.size) latestOnProgressUpdate(current[index].pageIndex, offset)
+            }
+    }
+    DisposableEffect(listState) {
+        onDispose {
+            val current = latestPages
+            val index = listState.firstVisibleItemIndex
+            if (isInitialPositionRestored && index < current.size) {
+                latestOnProgressUpdate(current[index].pageIndex, listState.firstVisibleItemScrollOffset)
+            }
         }
     }
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -576,23 +769,27 @@ fun VerticalReader(
         val pageWidthPx = with(density) { maxPageWidth.toPx() }.coerceAtMost(width)
         fun horizontalPanLimit(currentScale: Float): Float =
             ((pageWidthPx * currentScale - width) / 2f).coerceAtLeast(0f)
-        val state = rememberTransformableState { _, zoomChange, panChange, _ ->
-            val oldScale = scale
-            val newScale = (oldScale * zoomChange).coerceIn(1f, 5f)
-            scale = newScale
-            val maxX = horizontalPanLimit(newScale)
-            offsetX = (offsetX + panChange.x).coerceIn(-maxX, maxX)
-            if (scale > 1.05f && panChange.y != 0f) {
-                listState.dispatchRawDelta(-panChange.y / scale)
-            }
-        }
+        val currentOnTap by rememberUpdatedState(onTap)
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .transformable(state = state)
-                .pointerInput(Unit) {
+                .pointerInput(width, pageWidthPx) {
+                    detectTransformGestures { centroid, panChange, zoomChange, _ ->
+                        val oldScale = scale
+                        val newScale = (oldScale * zoomChange).coerceIn(1f, 5f)
+                        val effectiveZoom = newScale / oldScale
+                        val c = centroid.x - width / 2f
+                        val maxX = horizontalPanLimit(newScale)
+                        offsetX = (c - (c - offsetX) * effectiveZoom + panChange.x).coerceIn(-maxX, maxX)
+                        scale = newScale
+                        if (scale > 1.05f && panChange.y != 0f) {
+                            listState.dispatchRawDelta(-panChange.y / scale)
+                        }
+                    }
+                }
+                .pointerInput(width, pageWidthPx) {
                     detectTapGestures(
-                        onTap = { onTap() },
+                        onTap = { currentOnTap() },
                         onDoubleTap = { tapOffset ->
                             if (scale > 1.05f) {
                                 scale = 1f
@@ -611,11 +808,11 @@ fun VerticalReader(
                 state = listState,
                 modifier = Modifier
                     .fillMaxSize()
-                    .graphicsLayer(
-                        scaleX = scale,
-                        scaleY = scale,
-                        translationX = offsetX,
-                    ),
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                        translationX = offsetX
+                    },
                 contentPadding = innerPadding,
                 userScrollEnabled = scale <= 1.05f,
             ) {
@@ -671,6 +868,105 @@ fun VerticalReader(
                 }
             }
         }
+
+
+        var isDraggingScrollbar by remember { mutableStateOf(false) }
+        val scrollbarVisible = showScrollbar
+        LaunchedEffect(showScrollbar) {
+            if (!showScrollbar) isDraggingScrollbar = false
+        }
+        val scrollbarAlpha by animateFloatAsState(
+            targetValue = if (scrollbarVisible) 1f else 0f,
+            animationSpec = tween(durationMillis = 250),
+            label = "scrollbar_alpha",
+        )
+        if (scale <= 1.05f && pages.isNotEmpty() && (showScrollbar || scrollbarAlpha > 0.01f)) {
+            val totalCount = pages.size.coerceAtLeast(1)
+            val progress by remember(listState, totalCount) {
+                derivedStateOf {
+                    if (!listState.canScrollForward) {
+                        1f
+                    } else if (!listState.canScrollBackward && listState.firstVisibleItemScrollOffset == 0) {
+                        0f
+                    } else {
+                        val maxIndex = (totalCount - 1).coerceAtLeast(1)
+                        val itemSize = (listState.layoutInfo.visibleItemsInfo.firstOrNull()?.size ?: DEFAULT_PAGE_HEIGHT_PX).coerceAtLeast(1)
+                        val itemProgress = (listState.firstVisibleItemScrollOffset.toFloat() / itemSize).coerceIn(0f, 1f)
+                        ((listState.firstVisibleItemIndex.toFloat() + itemProgress) / maxIndex.toFloat()).coerceIn(0f, 1f)
+                    }
+                }
+            }
+            val compactHeight = maxHeight < 600.dp
+            val seekScope = rememberCoroutineScope()
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .fillMaxHeight()
+                    .padding(
+                        top = if (compactHeight) 64.dp else 110.dp,
+                        bottom = if (compactHeight) 64.dp else 154.dp,
+                        end = 6.dp,
+                    )
+                    .width(36.dp)
+                    .graphicsLayer { alpha = scrollbarAlpha },
+                contentAlignment = Alignment.TopCenter,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .width(4.dp)
+                        .background(Color.White.copy(alpha = 0.3f), RoundedCornerShape(2.dp))
+                )
+                BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                    val thumbHeight = 56.dp
+                    val maxOffset = maxHeight - thumbHeight
+                    val currentOffset = maxOffset * progress
+                    val thumbPx = with(density) { thumbHeight.toPx() }
+                    val trackPx = with(density) { maxHeight.toPx() }
+                    fun seekTo(y: Float) {
+                        val fraction = ((y - thumbPx / 2f) / (trackPx - thumbPx).coerceAtLeast(1f)).coerceIn(0f, 1f)
+                        val target = fraction * totalCount
+                        val idx = target.toInt().coerceIn(0, totalCount - 1)
+                        val within = (target - idx).coerceIn(0f, 1f)
+                        val itemSize = listState.layoutInfo.visibleItemsInfo.firstOrNull()?.size ?: DEFAULT_PAGE_HEIGHT_PX
+                        seekScope.launch { listState.scrollToItem(idx, (within * itemSize).toInt()) }
+                    }
+
+                    val touchModifier = if (scrollbarVisible) {
+                        Modifier
+                            .fillMaxSize()
+                            .pointerInput(totalCount, trackPx) {
+                                detectTapGestures(onTap = { seekTo(it.y) })
+                            }
+                            .pointerInput(totalCount, trackPx) {
+                                detectVerticalDragGestures(
+                                    onDragStart = { offset ->
+                                        isDraggingScrollbar = true
+                                        seekTo(offset.y)
+                                    },
+                                    onDragEnd = { isDraggingScrollbar = false },
+                                    onDragCancel = { isDraggingScrollbar = false },
+                                    onVerticalDrag = { change, _ ->
+                                        change.consume()
+                                        seekTo(change.position.y)
+                                    },
+                                )
+                            }
+                    } else {
+                        Modifier.fillMaxSize()
+                    }
+                    Box(modifier = touchModifier) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .offset(y = currentOffset)
+                                .size(width = if (isDraggingScrollbar) 24.dp else 20.dp, height = thumbHeight)
+                                .background(ReaderAccent, RoundedCornerShape(12.dp))
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 @Composable
@@ -694,11 +990,15 @@ fun HorizontalSingleReader(
     var dragDistance by remember { mutableFloatStateOf(0f) }
     var dragProgress by remember { mutableFloatStateOf(0f) }
     var turnFromIndex by remember { mutableIntStateOf(initialIndex) }
+    var turnTargetIndex by remember(pages) { mutableIntStateOf(initialIndex) }
+    var isCurrentPageZoomed by remember(pageIndex) { mutableStateOf(false) }
+    val velocityTracker = remember { VelocityTracker() }
     var queuedTapTurns by remember(pages) { mutableIntStateOf(0) }
     val turnProgress = remember { Animatable(0f) }
     val coroutineScope = rememberCoroutineScope()
     var turnJob by remember { mutableStateOf<Job?>(null) }
     val currentOnTap by rememberUpdatedState(onTap)
+    val density = LocalDensity.current
     fun startTurn(direction: Int) {
         if (direction == 0) return
         if (turningDirection != 0 || turnJob?.isActive == true) {
@@ -708,6 +1008,7 @@ fun HorizontalSingleReader(
         val targetIndex = (pageIndex + direction).coerceIn(0, pages.lastIndex)
         if (targetIndex == pageIndex) return
         turnFromIndex = pageIndex
+        turnTargetIndex = targetIndex
         turningDirection = direction
         turnJob?.cancel()
         turnJob = coroutineScope.launch {
@@ -732,6 +1033,7 @@ fun HorizontalSingleReader(
             turnJob?.cancel()
             turnJob = null
             pageIndex = targetIndex
+            turnTargetIndex = targetIndex
             turningDirection = 0
             dragDirection = 0
             queuedTapTurns = 0
@@ -748,6 +1050,7 @@ fun HorizontalSingleReader(
             if (targetIndex >= 0 && animateJumpToPage && targetIndex != pageIndex) {
                 val fromIndex = pageIndex
                 turnFromIndex = fromIndex
+                turnTargetIndex = targetIndex
                 turningDirection = if (targetIndex > fromIndex) 1 else -1
                 turnProgress.snapTo(0f)
                 turnJob = coroutineScope.launch {
@@ -761,7 +1064,10 @@ fun HorizontalSingleReader(
             } else {
                 turningDirection = 0
                 turnProgress.snapTo(0f)
-                if (targetIndex >= 0) pageIndex = targetIndex
+                if (targetIndex >= 0) {
+                    pageIndex = targetIndex
+                    turnTargetIndex = targetIndex
+                }
                 onJumpHandled()
             }
         }
@@ -771,6 +1077,9 @@ fun HorizontalSingleReader(
     }
     if (pages.isEmpty()) return
     PreloadComicPages(pages, (pageIndex - 1)..(pageIndex + 1))
+    if (turningDirection != 0) {
+        PreloadComicPages(pages, turnTargetIndex..turnTargetIndex)
+    }
     BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
         val currentPage = pages.getOrNull(if (turningDirection == 0) pageIndex else turnFromIndex)
         val currentPagePainter = rememberPageMeasurePainter(currentPage)
@@ -783,104 +1092,117 @@ fun HorizontalSingleReader(
         } else {
             maxWidth
         }
-        val pageWidthPx = with(LocalDensity.current) { pageWidth.toPx() }.coerceAtLeast(1f)
+        val pageWidthPx = with(density) { pageWidth.toPx() }.coerceAtLeast(1f)
         val currentPageWidthPx by rememberUpdatedState(pageWidthPx)
         val currentPageIndex by rememberUpdatedState(pageIndex)
         val currentTurnFromIndex by rememberUpdatedState(turnFromIndex)
         val currentLastIndex by rememberUpdatedState(pages.lastIndex)
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+
+        Box(
+            Modifier
+                .fillMaxSize()
+                .pointerInput(pageIndex, pages.size, isCurrentPageZoomed) {
+                    detectTapGestures { position ->
+                        if (isCurrentPageZoomed) {
+                            currentOnTap()
+                            return@detectTapGestures
+                        }
+                        val fraction = position.x / size.width
+                        when {
+                            fraction < 0.4f -> startTurn(-1)
+                            fraction > 0.6f -> startTurn(1)
+                            else -> currentOnTap()
+                        }
+                    }
+                }
+                .pointerInput(pageIndex, pages.size, isCurrentPageZoomed) {
+                    var ignoreGesture = false
+                    detectHorizontalDragGestures(
+                        onDragStart = {
+                            ignoreGesture = turningDirection != 0 || turnJob?.isActive == true || isCurrentPageZoomed
+                            dragDirection = 0
+                            dragDistance = 0f
+                            dragProgress = 0f
+                            velocityTracker.resetTracking()
+                        },
+                        onHorizontalDrag = { change, dragAmount ->
+                            if (ignoreGesture) return@detectHorizontalDragGestures
+                            velocityTracker.addPosition(change.uptimeMillis, change.position)
+                            dragDistance += dragAmount
+                            if (dragDirection == 0) {
+                                val requestedDirection = if (dragDistance < 0f) 1 else -1
+                                val targetIdx = currentPageIndex + requestedDirection
+                                if (targetIdx in 0..currentLastIndex) {
+                                    dragDirection = requestedDirection
+                                    turnFromIndex = currentPageIndex
+                                    turnTargetIndex = targetIdx
+                                    turningDirection = requestedDirection
+                                }
+                            }
+                            if (dragDirection != 0) {
+                                val traveled = if (dragDirection > 0) -dragDistance else dragDistance
+                                dragProgress = (traveled / currentPageWidthPx).coerceIn(0f, 1f)
+                                change.consume()
+                            }
+                        },
+                        onDragEnd = {
+                            if (ignoreGesture) {
+                                ignoreGesture = false
+                                return@detectHorizontalDragGestures
+                            }
+                            val direction = dragDirection
+                            if (direction != 0) {
+                                val progress = dragProgress
+                                val velocityX = velocityTracker.calculateVelocity().x
+                                val flingThreshold = with(density) { 600.dp.toPx() }
+                                val isFling = abs(velocityX) > flingThreshold && ((direction > 0 && velocityX < 0) || (direction < 0 && velocityX > 0))
+                                val shouldCommit = progress >= 0.28f || isFling
+                                turnJob?.cancel()
+                                turnJob = coroutineScope.launch {
+                                    turnProgress.snapTo(progress)
+                                    dragDirection = 0
+                                    turnProgress.animateTo(
+                                        if (shouldCommit) 1f else 0f,
+                                        tween(280, easing = FastOutSlowInEasing),
+                                    )
+                                    if (shouldCommit) pageIndex = turnTargetIndex
+                                    turningDirection = 0
+                                    turnProgress.snapTo(0f)
+                                    turnJob = null
+                                }
+                            }
+                        },
+                        onDragCancel = {
+                            if (ignoreGesture) {
+                                ignoreGesture = false
+                                return@detectHorizontalDragGestures
+                            }
+                            if (dragDirection != 0) {
+                                val progress = dragProgress
+                                turnJob?.cancel()
+                                turnJob = coroutineScope.launch {
+                                    turnProgress.snapTo(progress)
+                                    dragDirection = 0
+                                    turnProgress.animateTo(0f, tween(180))
+                                    turningDirection = 0
+                                    turnJob = null
+                                }
+                            }
+                        },
+                    )
+                },
+            contentAlignment = Alignment.Center,
+        ) {
             Box(
                 Modifier
                     .width(pageWidth)
                     .fillMaxHeight()
                     .clipToBounds()
-                    .background(Color.Black)
-                    .pointerInput(pageIndex, pages.size) {
-                        detectTapGestures { position ->
-                            val fraction = position.x / size.width
-                            when {
-                                fraction < 0.4f -> startTurn(-1)
-                                fraction > 0.6f -> startTurn(1)
-                                else -> currentOnTap()
-                            }
-                        }
-                    }
-                    .pointerInput(pageIndex, pages.size) {
-                        var ignoreGesture = false
-                        detectHorizontalDragGestures(
-                            onDragStart = {
-                                ignoreGesture = turningDirection != 0 || turnJob?.isActive == true
-                                dragDirection = 0
-                                dragDistance = 0f
-                                dragProgress = 0f
-                            },
-                            onHorizontalDrag = { change, dragAmount ->
-                                if (ignoreGesture) return@detectHorizontalDragGestures
-                                dragDistance += dragAmount
-                                if (dragDirection == 0) {
-                                    val requestedDirection = if (dragDistance < 0f) 1 else -1
-                                    if ((currentPageIndex + requestedDirection) in 0..currentLastIndex) {
-                                        dragDirection = requestedDirection
-                                        turnFromIndex = currentPageIndex
-                                        turningDirection = requestedDirection
-                                    }
-                                }
-                                if (dragDirection != 0) {
-                                    val traveled = if (dragDirection > 0) -dragDistance else dragDistance
-                                    dragProgress = (traveled / currentPageWidthPx).coerceIn(0f, 1f)
-                                    change.consume()
-                                }
-                            },
-                            onDragEnd = {
-                                if (ignoreGesture) {
-                                    ignoreGesture = false
-                                    return@detectHorizontalDragGestures
-                                }
-                                val direction = dragDirection
-                                if (direction != 0) {
-                                    val progress = dragProgress
-                                    val fromIndex = currentTurnFromIndex
-                                    turnJob?.cancel()
-                                    turnJob = coroutineScope.launch {
-                                        val shouldCommit = progress >= 0.28f
-                                        turnProgress.snapTo(progress)
-                                        dragDirection = 0
-                                        turnProgress.animateTo(
-                                            if (shouldCommit) 1f else 0f,
-                                            tween(280, easing = FastOutSlowInEasing),
-                                        )
-                                        if (shouldCommit) pageIndex = (fromIndex + direction).coerceIn(0, pages.lastIndex)
-                                        turningDirection = 0
-                                        turnProgress.snapTo(0f)
-                                        turnJob = null
-                                    }
-                                }
-                            },
-                            onDragCancel = {
-                                if (ignoreGesture) {
-                                    ignoreGesture = false
-                                    return@detectHorizontalDragGestures
-                                }
-                                if (dragDirection != 0) {
-                                    val progress = dragProgress
-                                    turnJob?.cancel()
-                                    turnJob = coroutineScope.launch {
-                                        turnProgress.snapTo(progress)
-                                        dragDirection = 0
-                                        turnProgress.animateTo(0f, tween(180))
-                                        turningDirection = 0
-                                        turnJob = null
-                                    }
-                                }
-                            },
-                        )
-                    },
+                    .background(Color.Black),
                 contentAlignment = Alignment.Center,
             ) {
                 val shownPage = pages.getOrNull(if (turningDirection == 0) pageIndex else turnFromIndex)
-                val targetPage = pages.getOrNull(
-                    (turnFromIndex + turningDirection).coerceIn(0, pages.lastIndex),
-                )
+                val targetPage = pages.getOrNull(if (turningDirection != 0) turnTargetIndex else pageIndex)
                 if (turningDirection != 0) {
                     val progress: () -> Float = { if (dragDirection != 0) dragProgress else turnProgress.value }
                     when (pageTransition) {
@@ -927,7 +1249,11 @@ fun HorizontalSingleReader(
                         }
                     }
                 } else {
-                    CurlComicPage(shownPage, Modifier.fillMaxSize())
+                    CurlComicPage(
+                        shownPage,
+                        Modifier.fillMaxSize(),
+                        onScaleChange = { isCurrentPageZoomed = it > 1.05f },
+                    )
                 }
             }
         }
@@ -939,30 +1265,34 @@ private fun CurlComicPage(
     modifier: Modifier = Modifier,
     imageAlignment: Alignment = Alignment.Center,
     imageTranslationX: Float = 0f,
+    onScaleChange: ((Float) -> Unit)? = null,
 ) {
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+    Box(modifier = modifier.clipToBounds(), contentAlignment = Alignment.Center) {
         if (page != null) {
-            ZoomableMediaBox(
-                modifier = Modifier.fillMaxSize(),
-                enableTapGestures = false,
-            ) { scale, offset ->
-                AsyncImage(
-                    model = ImageRequest.Builder(LocalContext.current)
-                        .data(Uri.parse(page.pageUri))
-                        .crossfade(false)
-                        .build(),
-                    contentDescription = null,
-                    alignment = imageAlignment,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer(
-                            scaleX = scale,
-                            scaleY = scale,
-                            translationX = offset.x + imageTranslationX,
-                            translationY = offset.y,
-                        ),
-                    contentScale = ContentScale.Fit,
-                )
+            key(page.pageIndex) {
+                ZoomableMediaBox(
+                    modifier = Modifier.fillMaxSize(),
+                    enableTapGestures = false,
+                    onScaleChange = onScaleChange,
+                ) { scale, offset ->
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(Uri.parse(page.pageUri))
+                            .crossfade(false)
+                            .build(),
+                        contentDescription = null,
+                        alignment = imageAlignment,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer(
+                                scaleX = scale,
+                                scaleY = scale,
+                                translationX = offset.x + imageTranslationX,
+                                translationY = offset.y,
+                            ),
+                        contentScale = ContentScale.Fit,
+                    )
+                }
             }
         }
     }
@@ -1205,6 +1535,7 @@ fun HorizontalDoubleReader(
     pageTransition: String,
     animateJumpToPage: Boolean,
     onJumpHandled: () -> Unit,
+    isRtl: Boolean = false,
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val initialSlot = remember(pages, initialPage) {
@@ -1218,12 +1549,18 @@ fun HorizontalDoubleReader(
         var dragDistance by remember { mutableFloatStateOf(0f) }
         var dragProgress by remember { mutableFloatStateOf(0f) }
         var turnFromSpread by remember { mutableIntStateOf(initialSpread) }
+        var turnTargetSpread by remember(pages) { mutableIntStateOf(initialSpread) }
         var queuedTapTurns by remember(pages) { mutableIntStateOf(0) }
+        var isCurrentLeftZoomed by remember { mutableStateOf(false) }
+        var isCurrentRightZoomed by remember { mutableStateOf(false) }
+        val isAnyZoomed = isCurrentLeftZoomed || isCurrentRightZoomed
         val turnProgress = remember { Animatable(0f) }
         val coroutineScope = rememberCoroutineScope()
         var turnJob by remember { mutableStateOf<Job?>(null) }
         val density = LocalDensity.current
         val currentOnTap by rememberUpdatedState(onTap)
+        val velocityTracker = remember { VelocityTracker() }
+
         fun startTurn(direction: Int) {
             if (direction == 0) return
             if (turningDirection != 0 || turnJob?.isActive == true) {
@@ -1233,6 +1570,7 @@ fun HorizontalDoubleReader(
             val targetSpread = (spreadIndex + direction).coerceIn(0, spreadCount - 1)
             if (targetSpread == spreadIndex) return
             turnFromSpread = spreadIndex
+            turnTargetSpread = targetSpread
             turningDirection = direction
             turnJob?.cancel()
             turnJob = coroutineScope.launch {
@@ -1256,6 +1594,7 @@ fun HorizontalDoubleReader(
             val targetSpread = targetSlot.takeIf { it >= 0 }?.let(::bookSpreadForSlot)
             if (targetSpread != null && targetSpread != spreadIndex && turningDirection == 0 && turnJob?.isActive != true) {
                 spreadIndex = targetSpread
+                turnTargetSpread = targetSpread
                 dragDirection = 0
                 queuedTapTurns = 0
                 turnProgress.snapTo(0f)
@@ -1273,6 +1612,7 @@ fun HorizontalDoubleReader(
                     if (animateJumpToPage && targetSpread != spreadIndex) {
                         val fromSpread = spreadIndex
                         turnFromSpread = fromSpread
+                        turnTargetSpread = targetSpread
                         turningDirection = if (targetSpread > fromSpread) 1 else -1
                         turnProgress.snapTo(0f)
                         turnJob = coroutineScope.launch {
@@ -1287,6 +1627,7 @@ fun HorizontalDoubleReader(
                         turningDirection = 0
                         turnProgress.snapTo(0f)
                         spreadIndex = targetSpread
+                        turnTargetSpread = targetSpread
                         onJumpHandled()
                     }
                 } else {
@@ -1297,22 +1638,22 @@ fun HorizontalDoubleReader(
             }
         }
         LaunchedEffect(spreadIndex, pages) {
-            (pages.getOrNull(rightPageSlotForSpread(spreadIndex))
-                ?: pages.getOrNull(leftPageSlotForSpread(spreadIndex)))
+            (pages.getOrNull(leftPageSlotForSpread(spreadIndex, isRtl))
+                ?: pages.getOrNull(rightPageSlotForSpread(spreadIndex, isRtl)))
                 ?.let { onProgressUpdate(it.pageIndex) }
         }
         if (pages.isEmpty()) return@BoxWithConstraints
-        val destinationSpread = (turnFromSpread + turningDirection).coerceIn(0, spreadCount - 1)
+        val destinationSpread = if (turningDirection != 0) turnTargetSpread else spreadIndex
         val shownSpread = if (turningDirection == 0) spreadIndex else turnFromSpread
-        val preloadSpread = if (turningDirection == 0) spreadIndex else turnFromSpread + turningDirection
+        val preloadSpread = if (turningDirection == 0) spreadIndex else turnTargetSpread
         PreloadComicPages(
             pages,
-            (leftPageSlotForSpread(preloadSpread - 1))..rightPageSlotForSpread(preloadSpread + 1),
+            (leftPageSlotForSpread(preloadSpread - 1, isRtl))..rightPageSlotForSpread(preloadSpread + 1, isRtl),
         )
-        val currentLeftPage = pages.getOrNull(leftPageSlotForSpread(shownSpread))
-        val currentRightPage = pages.getOrNull(rightPageSlotForSpread(shownSpread))
-        val destinationLeftPage = pages.getOrNull(leftPageSlotForSpread(destinationSpread))
-        val destinationRightPage = pages.getOrNull(rightPageSlotForSpread(destinationSpread))
+        val currentLeftPage = pages.getOrNull(leftPageSlotForSpread(shownSpread, isRtl))
+        val currentRightPage = pages.getOrNull(rightPageSlotForSpread(shownSpread, isRtl))
+        val destinationLeftPage = pages.getOrNull(leftPageSlotForSpread(destinationSpread, isRtl))
+        val destinationRightPage = pages.getOrNull(rightPageSlotForSpread(destinationSpread, isRtl))
         val pageProgress: () -> Float = {
             when {
                 turningDirection == 0 -> 0f
@@ -1320,10 +1661,24 @@ fun HorizontalDoubleReader(
                 else -> turnProgress.value
             }
         }
-        val underlayLeft = if (turningDirection < 0) destinationLeftPage else currentLeftPage
-        val underlayRight = if (turningDirection > 0) destinationRightPage else currentRightPage
-        val turningFront = if (turningDirection > 0) currentRightPage else currentLeftPage
-        val turningBack = if (turningDirection > 0) destinationLeftPage else destinationRightPage
+        val underlayLeft = when {
+            turningDirection == 0 -> currentLeftPage
+            isRtl -> if (turningDirection > 0) destinationLeftPage else currentLeftPage
+            else -> if (turningDirection < 0) destinationLeftPage else currentLeftPage
+        }
+        val underlayRight = when {
+            turningDirection == 0 -> currentRightPage
+            isRtl -> if (turningDirection < 0) destinationRightPage else currentRightPage
+            else -> if (turningDirection > 0) destinationRightPage else currentRightPage
+        }
+        val turningFront = when {
+            isRtl -> if (turningDirection > 0) currentLeftPage else currentRightPage
+            else -> if (turningDirection > 0) currentRightPage else currentLeftPage
+        }
+        val turningBack = when {
+            isRtl -> if (turningDirection > 0) destinationRightPage else destinationLeftPage
+            else -> if (turningDirection > 0) destinationLeftPage else destinationRightPage
+        }
         val layoutDirection = LocalLayoutDirection.current
         val contentWidth = maxWidth - innerPadding.calculateLeftPadding(layoutDirection) - innerPadding.calculateRightPadding(layoutDirection)
         val contentHeight = maxHeight - innerPadding.calculateTopPadding() - innerPadding.calculateBottomPadding()
@@ -1379,38 +1734,67 @@ fun HorizontalDoubleReader(
                 .padding(innerPadding)
                 .background(Color.Black)
                 .clipToBounds()
-                .pointerInput(spreadIndex, pages.size) {
+                .pointerInput(spreadIndex, pages.size, isRtl, isAnyZoomed) {
                     detectTapGestures { position ->
+                        if (isAnyZoomed) {
+                            currentOnTap()
+                            return@detectTapGestures
+                        }
                         val fraction = position.x / size.width
-                        when {
-                            fraction < 0.4f -> startTurn(-1)
-                            fraction > 0.6f -> startTurn(1)
-                            else -> currentOnTap()
+                        val tapDirection = if (isRtl) {
+                            when {
+                                fraction < 0.4f -> 1
+                                fraction > 0.6f -> -1
+                                else -> 0
+                            }
+                        } else {
+                            when {
+                                fraction < 0.4f -> -1
+                                fraction > 0.6f -> 1
+                                else -> 0
+                            }
+                        }
+                        if (tapDirection != 0) {
+                            startTurn(tapDirection)
+                        } else {
+                            currentOnTap()
                         }
                     }
                 }
-                .pointerInput(spreadIndex, pages.size) {
+                .pointerInput(spreadIndex, pages.size, isRtl, isAnyZoomed) {
                     var ignoreGesture = false
                     detectHorizontalDragGestures(
                         onDragStart = {
-                            ignoreGesture = turningDirection != 0 || turnJob?.isActive == true
+                            velocityTracker.resetTracking()
+                            ignoreGesture = turningDirection != 0 || turnJob?.isActive == true || isAnyZoomed
                             dragDirection = 0
                             dragDistance = 0f
                             dragProgress = 0f
                         },
                         onHorizontalDrag = { change, dragAmount ->
                             if (ignoreGesture) return@detectHorizontalDragGestures
+                            velocityTracker.addPosition(change.uptimeMillis, change.position)
                             dragDistance += dragAmount
                             if (dragDirection == 0) {
-                                val requestedDirection = if (dragDistance < 0f) 1 else -1
-                                if ((spreadIndex + requestedDirection) in 0 until spreadCount) {
+                                val requestedDirection = if (isRtl) {
+                                    if (dragDistance > 0f) 1 else -1
+                                } else {
+                                    if (dragDistance < 0f) 1 else -1
+                                }
+                                val target = (spreadIndex + requestedDirection).coerceIn(0, spreadCount - 1)
+                                if (target != spreadIndex) {
                                     dragDirection = requestedDirection
                                     turnFromSpread = spreadIndex
+                                    turnTargetSpread = target
                                     turningDirection = requestedDirection
                                 }
                             }
                             if (dragDirection != 0) {
-                                val traveled = if (dragDirection > 0) -dragDistance else dragDistance
+                                val traveled = if (isRtl) {
+                                    if (dragDirection > 0) dragDistance else -dragDistance
+                                } else {
+                                    if (dragDirection > 0) -dragDistance else dragDistance
+                                }
                                 dragProgress = (traveled / currentDragWidthPx).coerceIn(0f, 1f)
                                 change.consume()
                             }
@@ -1423,17 +1807,24 @@ fun HorizontalDoubleReader(
                             val direction = dragDirection
                             if (direction != 0) {
                                 val progress = dragProgress
-                                val fromSpread = turnFromSpread
+                                val velocityX = velocityTracker.calculateVelocity().x
+                                val flingThreshold = with(density) { 600.dp.toPx() }
+                                val isFling = abs(velocityX) > flingThreshold && if (isRtl) {
+                                    (direction > 0 && velocityX > 0) || (direction < 0 && velocityX < 0)
+                                } else {
+                                    (direction > 0 && velocityX < 0) || (direction < 0 && velocityX > 0)
+                                }
+                                val shouldCommit = progress >= 0.28f || isFling
+                                val targetSpread = turnTargetSpread
                                 turnJob?.cancel()
                                 turnJob = coroutineScope.launch {
-                                    val shouldCommit = progress >= 0.28f
                                     turnProgress.snapTo(progress)
                                     dragDirection = 0
                                     turnProgress.animateTo(
                                         if (shouldCommit) 1f else 0f,
                                         tween(280, easing = FastOutSlowInEasing),
                                     )
-                                    if (shouldCommit) spreadIndex = (fromSpread + direction).coerceIn(0, spreadCount - 1)
+                                    if (shouldCommit) spreadIndex = targetSpread
                                     turningDirection = 0
                                     turnProgress.snapTo(0f)
                                     turnJob = null
@@ -1462,19 +1853,20 @@ fun HorizontalDoubleReader(
                 },
         ) {
             if (turningDirection != 0 && pageTransition == "slide") {
-                val currentSlideDistance = if (turningDirection > 0) {
+                val slideDir = if (isRtl) -turningDirection else turningDirection
+                val currentSlideDistance = if (slideDir > 0) {
                     currentImageRight
                 } else {
                     viewportWidth - currentImageLeft
                 }
-                val destinationSlideDistance = if (turningDirection > 0) {
+                val destinationSlideDistance = if (slideDir > 0) {
                     viewportWidth - destinationImageLeft
                 } else {
                     destinationImageRight
                 }
                 Row(
                     Modifier.fillMaxSize().graphicsLayer {
-                        translationX = -turningDirection * currentSlideDistance * pageProgress()
+                        translationX = -slideDir * currentSlideDistance * pageProgress()
                     },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -1482,16 +1874,18 @@ fun HorizontalDoubleReader(
                         page = currentLeftPage,
                         modifier = Modifier.weight(1f).fillMaxHeight(),
                         imageAlignment = Alignment.CenterEnd,
+                        onScaleChange = { isCurrentLeftZoomed = it > 1.05f },
                     )
                     CurlComicPage(
                         page = currentRightPage,
                         modifier = Modifier.weight(1f).fillMaxHeight(),
                         imageAlignment = Alignment.CenterStart,
+                        onScaleChange = { isCurrentRightZoomed = it > 1.05f },
                     )
                 }
                 Row(
                     Modifier.fillMaxSize().graphicsLayer {
-                        translationX = turningDirection * destinationSlideDistance * (1f - pageProgress())
+                        translationX = slideDir * destinationSlideDistance * (1f - pageProgress())
                     },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -1517,11 +1911,13 @@ fun HorizontalDoubleReader(
                         page = currentLeftPage,
                         modifier = Modifier.weight(1f).fillMaxHeight(),
                         imageAlignment = Alignment.CenterEnd,
+                        onScaleChange = { isCurrentLeftZoomed = it > 1.05f },
                     )
                     CurlComicPage(
                         page = currentRightPage,
                         modifier = Modifier.weight(1f).fillMaxHeight(),
                         imageAlignment = Alignment.CenterStart,
+                        onScaleChange = { isCurrentRightZoomed = it > 1.05f },
                     )
                 }
                 Row(
@@ -1547,18 +1943,20 @@ fun HorizontalDoubleReader(
                         page = underlayLeft,
                         modifier = Modifier.weight(1f).fillMaxHeight(),
                         imageAlignment = Alignment.CenterEnd,
+                        onScaleChange = { isCurrentLeftZoomed = it > 1.05f },
                     )
                     CurlComicPage(
                         page = underlayRight,
                         modifier = Modifier.weight(1f).fillMaxHeight(),
                         imageAlignment = Alignment.CenterStart,
+                        onScaleChange = { isCurrentRightZoomed = it > 1.05f },
                     )
                 }
                 if (turningDirection != 0) {
                     DoublePageCurlSurface(
                         frontPage = turningFront,
                         backPage = turningBack,
-                        direction = turningDirection,
+                        direction = if (isRtl) -turningDirection else turningDirection,
                         progress = pageProgress,
                         modifier = Modifier.fillMaxSize(),
                     )
@@ -1569,10 +1967,10 @@ fun HorizontalDoubleReader(
 }
 private fun bookSpreadForSlot(pageSlot: Int): Int =
     if (pageSlot == 0) 0 else (pageSlot + 1) / 2
-private fun leftPageSlotForSpread(spreadIndex: Int): Int =
-    if (spreadIndex == 0) -1 else spreadIndex * 2 - 1
-private fun rightPageSlotForSpread(spreadIndex: Int): Int =
-    if (spreadIndex == 0) 0 else spreadIndex * 2
+private fun leftPageSlotForSpread(spreadIndex: Int, isRtl: Boolean = false): Int =
+    if (spreadIndex == 0) -1 else if (isRtl) spreadIndex * 2 else spreadIndex * 2 - 1
+private fun rightPageSlotForSpread(spreadIndex: Int, isRtl: Boolean = false): Int =
+    if (spreadIndex == 0) 0 else if (isRtl) spreadIndex * 2 - 1 else spreadIndex * 2
 private fun pageFileName(page: ComicPage): String =
     (Uri.parse(page.pageUri).lastPathSegment ?: page.pageUri)
         .substringAfterLast('/')
@@ -1605,72 +2003,190 @@ private fun naturalCompare(a: String, b: String): Int {
     return (a.length - i).compareTo(b.length - j)
 }
 @Composable
-private fun ReaderMenuHeader(text: String) {
+private fun VerticalModeIcon(tint: Color) {
+    Canvas(modifier = Modifier.size(20.dp)) {
+        val strokeWidth = 1.6.dp.toPx()
+        val cornerRadius = CornerRadius(1.5.dp.toPx(), 1.5.dp.toPx())
+        val rectWidth = size.width * 0.7f
+        val rectHeight = size.height * 0.34f
+        val left = (size.width - rectWidth) / 2f
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(left, size.height * 0.1f),
+            size = Size(rectWidth, rectHeight),
+            cornerRadius = cornerRadius,
+            style = Stroke(width = strokeWidth),
+        )
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(left, size.height * 0.56f),
+            size = Size(rectWidth, rectHeight),
+            cornerRadius = cornerRadius,
+            style = Stroke(width = strokeWidth),
+        )
+    }
+}
+
+@Composable
+private fun SinglePageModeIcon(tint: Color) {
+    Canvas(modifier = Modifier.size(20.dp)) {
+        val strokeWidth = 1.6.dp.toPx()
+        val cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx())
+        val rectWidth = size.width * 0.54f
+        val rectHeight = size.height * 0.8f
+        val left = (size.width - rectWidth) / 2f
+        val top = (size.height - rectHeight) / 2f
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(left, top),
+            size = Size(rectWidth, rectHeight),
+            cornerRadius = cornerRadius,
+            style = Stroke(width = strokeWidth),
+        )
+    }
+}
+
+@Composable
+private fun DoublePageModeIcon(tint: Color) {
+    Canvas(modifier = Modifier.size(20.dp)) {
+        val strokeWidth = 1.6.dp.toPx()
+        val cornerRadius = CornerRadius(1.5.dp.toPx(), 1.5.dp.toPx())
+        val gap = 2.dp.toPx()
+        val rectWidth = (size.width * 0.82f - gap) / 2f
+        val rectHeight = size.height * 0.7f
+        val startX = (size.width - (rectWidth * 2f + gap)) / 2f
+        val top = (size.height - rectHeight) / 2f
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(startX, top),
+            size = Size(rectWidth, rectHeight),
+            cornerRadius = cornerRadius,
+            style = Stroke(width = strokeWidth),
+        )
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(startX + rectWidth + gap, top),
+            size = Size(rectWidth, rectHeight),
+            cornerRadius = cornerRadius,
+            style = Stroke(width = strokeWidth),
+        )
+    }
+}
+
+
+@Composable
+private fun ReaderActionRow(icon: ImageVector, text: String, onClick: () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = ReaderBar,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .clickable(onClick = onClick),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(imageVector = icon, contentDescription = null, tint = ReaderAccent, modifier = Modifier.size(24.dp))
+            Spacer(Modifier.width(12.dp))
+            Text(text = text, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+        }
+    }
+}
+
+@Composable
+private fun ReaderSectionLabel(text: String) {
     Text(
-        text = text.uppercase(),
-        color = Color.White.copy(alpha = 0.5f),
-        fontSize = 11.sp,
+        text = text,
+        fontSize = 13.sp,
         fontWeight = FontWeight.Bold,
+        color = ReaderMuted,
         letterSpacing = 0.8.sp,
-        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
-    )
-}
-@Composable
-private fun ReaderMenuDivider() {
-    HorizontalDivider(
-        color = Color.White.copy(alpha = 0.12f),
-        modifier = Modifier.padding(vertical = 4.dp),
-    )
-}
-@Composable
-private fun ReaderMenuItem(
-    text: String,
-    icon: ImageVector,
-    onClick: () -> Unit,
-    selected: Boolean = false,
-    tint: Color = Color.White,
-    iconTint: Color = tint,
-) {
-    val accent = MaterialTheme.colorScheme.primary
-    DropdownMenuItem(
-        text = {
-            Text(
-                text = text,
-                color = if (selected) accent else tint,
-                fontSize = 14.sp,
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            )
-        },
-        leadingIcon = {
-            Icon(
-                icon,
-                contentDescription = null,
-                tint = if (selected) accent else iconTint,
-                modifier = Modifier.size(20.dp),
-            )
-        },
-        trailingIcon = if (selected) {
-            { Icon(Icons.Default.Check, contentDescription = null, tint = accent, modifier = Modifier.size(18.dp)) }
-        } else null,
-        onClick = onClick,
     )
 }
 
 @Composable
-private fun ReaderDropdownMenu(
-    expanded: Boolean,
-    onDismissRequest: () -> Unit,
+private fun <T> ReaderSegmented(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(52.dp)
+            .clip(RoundedCornerShape(26.dp))
+            .background(ReaderBar)
+            .padding(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        options.forEach { (key, label) ->
+            val isSelected = key == selected
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(if (isSelected) ReaderAccent else Color.Transparent)
+                    .clickable { onSelect(key) },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = label,
+                    color = if (isSelected) ReaderOnAccent else Color.White,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                    fontSize = 15.sp,
+                )
+            }
+        }
+    }
+}
+
+
+@Composable
+private fun BoxScope.ReaderSidePanel(
+    visible: Boolean,
+    title: String,
+    onClose: () -> Unit,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val maxMenuHeight = (LocalConfiguration.current.screenHeightDp.dp - 96.dp).coerceAtLeast(240.dp)
-    DropdownMenu(
-        expanded = expanded,
-        onDismissRequest = onDismissRequest,
+    AnimatedVisibility(
+        visible = visible,
+        enter = slideInHorizontally(initialOffsetX = { it }),
+        exit = slideOutHorizontally(targetOffsetX = { it }),
         modifier = Modifier
-            .widthIn(min = 240.dp, max = 320.dp)
-            .heightIn(max = maxMenuHeight)
-            .clip(RoundedCornerShape(8.dp))
-            .background(ReaderPanelBackground),
-        content = content,
-    )
+            .align(Alignment.CenterEnd)
+            .fillMaxHeight()
+            .fillMaxWidth(0.77f)
+            .widthIn(max = 380.dp)
+            .background(ReaderPanel)
+            .pointerInput(Unit) { detectTapGestures { } }
+            .statusBarsPadding()
+            .navigationBarsPadding(),
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 20.dp, end = 14.dp, top = 8.dp, bottom = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = title,
+                    color = Color.White,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                IconButton(
+                    onClick = onClose,
+                    modifier = Modifier.size(32.dp),
+                ) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = t("Close", "Tutup"),
+                        tint = Color.White,
+                    )
+                }
+            }
+            content()
+        }
+    }
 }

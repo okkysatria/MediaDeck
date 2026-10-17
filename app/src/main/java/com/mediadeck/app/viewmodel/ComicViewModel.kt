@@ -171,8 +171,8 @@ class ComicViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val heroComic: StateFlow<Comic?> = repository.allComics
         .map { items ->
-            val lastRead = items.filter { it.currentPage > 0 }.maxByOrNull { it.lastReadTime }
-            lastRead ?: items.filter { it.isFavorite }.maxByOrNull { it.dateAdded }
+            val lastRead = items.filter { it.currentPage > 0 || it.lastReadTime > 0 }.maxByOrNull { it.lastReadTime }
+            lastRead ?: items.filter { it.isFavorite }.maxByOrNull { it.dateAdded } ?: items.maxByOrNull { it.dateAdded }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
     private val _activeComic = MutableStateFlow<Comic?>(null)

@@ -1,9 +1,11 @@
 package com.mediadeck.app.ui.screens.settings
-import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -12,16 +14,26 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.mediadeck.app.data.settings.AppSettings
+import com.mediadeck.app.ui.theme.DeckAccentBlue
+import com.mediadeck.app.ui.theme.DeckBackground
+import com.mediadeck.app.ui.theme.DeckBadgeRed
+import com.mediadeck.app.ui.theme.DeckOnAccent
+import com.mediadeck.app.ui.theme.DeckSurface
+import com.mediadeck.app.ui.theme.DeckSurfaceVariant
+import com.mediadeck.app.ui.theme.DeckTextPrimary
+import com.mediadeck.app.ui.theme.DeckTextSecondary
 import com.mediadeck.app.util.i18n.t
 import com.mediadeck.app.viewmodel.ScannerViewModel
 import com.mediadeck.app.viewmodel.SettingsViewModel
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SmbExplorer(
@@ -66,16 +78,37 @@ fun SmbExplorer(
             showAuthForm = true
         }
     }
+
+    val atRoot = activeShare.isEmpty()
+    val subtitle = when {
+        !atRoot -> displayLocation
+        settings.smbHost.isBlank() -> t("Connecting...", "Menghubungkan...")
+        else -> t("Choose a share", "Pilih share")
+    }
+    val crumbs = buildList {
+        add(settings.smbHost.trim())
+        if (activeShare.isNotEmpty()) add(activeShare)
+        addAll(browseSubpathBySession.split('/').filter { it.isNotBlank() })
+    }.filter { it.isNotBlank() }
+    val folders = browserItems.filter { it.isDirectory }
+    val files = browserItems.filterNot { it.isDirectory }
+
     Scaffold(
+        containerColor = DeckBackground,
         topBar = {
             TopAppBar(
                 title = {
                     Column {
-                        Text(t("Select SMB Folder", "Pilih Folder SMB"), fontWeight = FontWeight.Bold, fontSize = 16.sp)
                         Text(
-                            displayLocation.ifEmpty { t("Connecting...", "Menghubungkan...") },
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            t("Select SMB Folder", "Pilih Folder SMB"),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = DeckTextPrimary,
+                        )
+                        Text(
+                            subtitle,
+                            fontSize = 12.sp,
+                            color = DeckTextSecondary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -90,7 +123,12 @@ fun SmbExplorer(
                     IconButton(onClick = { settingsViewModel.retryBrowserLoading() }) {
                         Icon(Icons.Default.Refresh, contentDescription = t("Refresh", "Muat Ulang"))
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = DeckBackground,
+                    navigationIconContentColor = DeckTextPrimary,
+                    actionIconContentColor = DeckTextPrimary,
+                ),
             )
         }
     ) { innerPadding ->
@@ -102,15 +140,49 @@ fun SmbExplorer(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                if (showAuthForm || needsAuthentication) {
+
+                if (crumbs.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        crumbs.forEachIndexed { index, crumb ->
+                            val isLast = index == crumbs.lastIndex
+                            if (index > 0) {
+                                Icon(
+                                    Icons.Default.ChevronRight,
+                                    contentDescription = null,
+                                    tint = DeckTextSecondary,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .background(if (isLast) DeckAccentBlue.copy(alpha = 0.16f) else DeckSurfaceVariant)
+                                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                            ) {
+                                Text(
+                                    crumb,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (isLast) DeckAccentBlue else DeckTextPrimary,
+                                    maxLines = 1,
+                                )
+                            }
+                        }
+                    }
+                }
+                if (showAuthForm) {
                     Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.15f)
-                        ),
-                        shape = RoundedCornerShape(8.dp),
+                        colors = CardDefaults.cardColors(containerColor = DeckSurface),
+                        shape = RoundedCornerShape(20.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
@@ -118,20 +190,21 @@ fun SmbExplorer(
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                                Icon(Icons.Default.Lock, contentDescription = null, tint = DeckBadgeRed)
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text(t("Samba Authorization Required", "Otorisasi Samba Diperlukan"), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.error)
+                                Text(t("Samba Authorization Required", "Otorisasi Samba Diperlukan"), fontWeight = FontWeight.Bold, fontSize = 15.sp, color = DeckBadgeRed)
                             }
                             if (error != null) {
-                                Text("Detail: $error", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                                Text("Detail: $error", fontSize = 12.sp, color = DeckBadgeRed)
                             } else {
-                                Text(t("Server restricted access without valid credentials.", "Server membatasi akses tanpa kredensial yang valid."), fontSize = 11.sp)
+                                Text(t("Server restricted access without valid credentials.", "Server membatasi akses tanpa kredensial yang valid."), fontSize = 12.sp, color = DeckTextSecondary)
                             }
                             OutlinedTextField(
                                 value = username,
                                 onValueChange = { username = it },
                                 label = { Text(t("Username", "Username")) },
                                 singleLine = true,
+                                shape = RoundedCornerShape(16.dp),
                                 modifier = Modifier.fillMaxWidth()
                             )
                             OutlinedTextField(
@@ -140,6 +213,7 @@ fun SmbExplorer(
                                 label = { Text(t("Password", "Password")) },
                                 singleLine = true,
                                 visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                                shape = RoundedCornerShape(16.dp),
                                 modifier = Modifier.fillMaxWidth()
                             )
                             OutlinedTextField(
@@ -147,6 +221,7 @@ fun SmbExplorer(
                                 onValueChange = { domain = it },
                                 label = { Text(t("Domain (Workgroup)", "Domain (Workgroup)")) },
                                 singleLine = true,
+                                shape = RoundedCornerShape(16.dp),
                                 modifier = Modifier.fillMaxWidth()
                             )
                             Row(
@@ -155,7 +230,7 @@ fun SmbExplorer(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 TextButton(onClick = { showAuthForm = false }) {
-                                    Text(t("Cancel", "Batal"))
+                                    Text(t("Cancel", "Batal"), color = DeckTextPrimary)
                                 }
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Button(
@@ -175,30 +250,45 @@ fun SmbExplorer(
                                         )
                                         showAuthForm = false
                                     },
-                                    enabled = !isLoading
+                                    enabled = !isLoading,
+                                    shape = CircleShape,
+                                    modifier = Modifier.height(38.dp),
+                                    contentPadding = PaddingValues(horizontal = 18.dp, vertical = 0.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = DeckAccentBlue,
+                                        contentColor = DeckOnAccent,
+                                    ),
                                 ) {
-                                    Text(t("Connect", "Hubungkan"))
+                                    Text(t("Connect", "Hubungkan"), fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
                     }
                 }
-                if (error != null && !needsAuthentication) {
+                if (error != null && !showAuthForm) {
                     Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.15f)
-                        ),
-                        shape = RoundedCornerShape(8.dp),
+                        colors = CardDefaults.cardColors(containerColor = DeckSurface),
+                        shape = RoundedCornerShape(20.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
                             modifier = Modifier.padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Text(t("Samba Connection Failed", "Koneksi Samba Gagal"), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
-                            Text(error.orEmpty(), fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
-                            Button(onClick = settingsViewModel::retryBrowserLoading, enabled = !isLoading) {
-                                Text(t("Retry", "Coba Lagi"))
+                            Text(t("Samba Connection Failed", "Koneksi Samba Gagal"), fontWeight = FontWeight.Bold, color = DeckBadgeRed)
+                            Text(error.orEmpty(), fontSize = 12.sp, color = DeckBadgeRed)
+                            Button(
+                                onClick = settingsViewModel::retryBrowserLoading,
+                                enabled = !isLoading,
+                                shape = CircleShape,
+                                modifier = Modifier.height(38.dp),
+                                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 0.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = DeckAccentBlue,
+                                    contentColor = DeckOnAccent,
+                                ),
+                            ) {
+                                Text(t("Retry", "Coba Lagi"), fontSize = 13.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -214,9 +304,9 @@ fun SmbExplorer(
                             verticalArrangement = Arrangement.Center,
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            CircularProgressIndicator()
+                            CircularProgressIndicator(color = DeckAccentBlue)
                             Spacer(modifier = Modifier.height(12.dp))
-                            Text(t("Loading Network Folders...", "Membaca Folder Jaringan..."), fontSize = 13.sp, color = MaterialTheme.colorScheme.secondary)
+                            Text(t("Loading Network Folders...", "Membaca Folder Jaringan..."), fontSize = 14.sp, color = DeckTextSecondary)
                         }
                     } else if (browserItems.isEmpty() && error == null) {
                         Column(
@@ -228,74 +318,91 @@ fun SmbExplorer(
                                 Icons.Default.FolderOpen,
                                 contentDescription = null,
                                 modifier = Modifier.size(48.dp),
-                                tint = MaterialTheme.colorScheme.outline
+                                tint = DeckTextSecondary
                             )
                             Spacer(modifier = Modifier.height(8.dp))
-                            Text(t("Empty Directory or Non-readable", "Folder Kosong / Tidak Terlihat"), fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            Text(t("Make sure this folder has compatible shares and is readable.", "Pastikan folder ini berisi berkas dan bukan folder tersembunyi."), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(t("Empty Directory or Non-readable", "Folder Kosong / Tidak Terlihat"), fontWeight = FontWeight.Bold, fontSize = 15.sp, color = DeckTextPrimary)
+                            Text(t("Make sure this folder has compatible shares and is readable.", "Pastikan folder ini berisi berkas dan bukan folder tersembunyi."), fontSize = 12.sp, color = DeckTextSecondary)
                         }
                     } else {
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                            contentPadding = PaddingValues(bottom = 144.dp)
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            contentPadding = PaddingValues(bottom = 168.dp)
                         ) {
-                            items(browserItems.size) { index ->
-                                val item = browserItems[index]
-                                Card(
+                            items(folders.size) { index ->
+                                val item = folders[index]
+                                Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .then(
-                                            if (item.isDirectory) {
-                                                Modifier.clickable { settingsViewModel.navigateIntoDirectory(item) }
-                                            } else Modifier
-                                        ),
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = if (item.isDirectory) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surface
-                                    ),
-                                    border = if (item.isDirectory) null else androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(DeckSurface)
+                                        .clickable { settingsViewModel.navigateIntoDirectory(item) }
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                                 ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                                        verticalAlignment = Alignment.CenterVertically
+                                    Box(
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(DeckAccentBlue.copy(alpha = 0.14f)),
+                                        contentAlignment = Alignment.Center
                                     ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(38.dp)
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .background(
-                                                    if (item.isDirectory) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                                                    else MaterialTheme.colorScheme.outline.copy(alpha = 0.05f)
-                                                ),
-                                            contentAlignment = Alignment.Center
-                                        ) {
+                                        Icon(
+                                            imageVector = if (atRoot) Icons.Default.Dns else Icons.Default.Folder,
+                                            contentDescription = null,
+                                            tint = DeckAccentBlue,
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                    }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(item.name, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = DeckTextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text(
+                                            if (atRoot) t("Share", "Share") else t("Folder", "Folder"),
+                                            fontSize = 13.sp,
+                                            color = DeckTextSecondary,
+                                        )
+                                    }
+                                    Icon(Icons.Default.ChevronRight, contentDescription = null, tint = DeckTextSecondary)
+                                }
+                            }
+                            if (files.isNotEmpty()) {
+                                item {
+                                    Text(
+                                        t("Files · can't be selected", "Berkas · tidak bisa dipilih").uppercase(),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 1.sp,
+                                        color = DeckTextSecondary,
+                                        modifier = Modifier.padding(start = 6.dp, top = 16.dp, bottom = 4.dp),
+                                    )
+                                }
+                                items(files.size) { index ->
+                                    val item = files[index]
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .alpha(0.55f)
+                                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                                    ) {
+                                        Box(modifier = Modifier.size(56.dp), contentAlignment = Alignment.Center) {
                                             Icon(
-                                                imageVector = if (item.isDirectory) Icons.Default.Folder else Icons.Default.Description,
+                                                imageVector = Icons.Default.Description,
                                                 contentDescription = null,
-                                                tint = if (item.isDirectory) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                                                modifier = Modifier.size(24.dp)
+                                                tint = DeckTextSecondary,
+                                                modifier = Modifier.size(26.dp)
                                             )
                                         }
-                                        Spacer(modifier = Modifier.width(12.dp))
                                         Column(modifier = Modifier.weight(1f)) {
-                                            Text(item.name, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                            if (!item.isDirectory) {
-                                                Text(
-                                                    android.text.format.Formatter.formatShortFileSize(context, item.size),
-                                                    fontSize = 11.sp,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                                                )
-                                            } else {
-                                                Text(
-                                                    t("Folder", "Folder"),
-                                                    fontSize = 11.sp,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
-                                        }
-                                        if (item.isDirectory) {
-                                            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Text(item.name, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, color = DeckTextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Text(
+                                                android.text.format.Formatter.formatShortFileSize(context, item.size),
+                                                fontSize = 14.sp,
+                                                color = DeckTextSecondary,
+                                            )
                                         }
                                     }
                                 }
@@ -304,77 +411,101 @@ fun SmbExplorer(
                     }
                 }
             }
-            if (activeShare.isNotEmpty() && !isLoading) {
+            if (!isLoading) {
                 Surface(
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp),
+                    color = DeckSurfaceVariant,
+                    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
                     modifier = Modifier
                         .fillMaxWidth()
                         .align(Alignment.BottomCenter)
-                        .padding(horizontal = 8.dp),
-                    tonalElevation = 2.dp,
+                        .navigationBarsPadding(),
                 ) {
                     Column(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.FolderOpen, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Icon(Icons.Default.FolderOpen, null, modifier = Modifier.size(22.dp), tint = DeckAccentBlue)
+                            Spacer(modifier = Modifier.width(12.dp))
                             Text(
                                 displayLocation.ifEmpty { activeShare },
-                                fontWeight = FontWeight.Medium,
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 17.sp,
+                                color = DeckTextPrimary,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f),
                             )
                         }
-                        val triggerScan = { type: String ->
-                            if (!isNavigatingAway) {
-                                isNavigatingAway = true
-                                val fullUrl = com.mediadeck.app.util.smb.SmbScanner.buildSmbUrl(
-                                    host = settings.smbHost,
-                                    port = settings.smbPort,
-                                    share = activeShare,
-                                    subpath = browseSubpathBySession
-                                )
-                                android.widget.Toast.makeText(
-                                    context,
-                                    (if (settings.language == "en") "Scanning: " else "Memindai: ") + activeShare,
-                                    android.widget.Toast.LENGTH_SHORT
-                                ).show()
-                                scannerViewModel.saveLibraryFolder(context, fullUrl, type)
-                                settingsViewModel.clearBrowserState()
-                                scannerViewModel.runFolderScan(fullUrl, type)
-                            }
+                        val icon = when (scanType) {
+                            "comics" -> Icons.Default.AutoStories
+                            "movies" -> Icons.Default.Movie
+                            else -> Icons.Default.Image
                         }
-                        Button(
-                            onClick = { 
-                                triggerScan(when(scanType) {
-                                    "comics" -> "comics"
-                                    "movies" -> "movies"
-                                    else -> "gallery"
-                                })
-                            },
-                            modifier = Modifier.fillMaxWidth().height(48.dp),
-                            shape = RoundedCornerShape(8.dp),
-                            enabled = !isNavigatingAway,
-                        ) {
-                            val icon = when(scanType) {
-                                "comics" -> Icons.Default.AutoStories
-                                "movies" -> Icons.Default.Movie
-                                else -> Icons.Default.Collections
+                        if (atRoot) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(56.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center,
+                            ) {
+                                Icon(icon, contentDescription = null, tint = DeckTextSecondary, modifier = Modifier.size(24.dp))
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    t("Open a folder to scan", "Buka folder untuk dipindai"),
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = DeckTextSecondary,
+                                )
                             }
-                            val label = when(scanType) {
+                        } else {
+                            val triggerScan = { type: String ->
+                                if (!isNavigatingAway) {
+                                    isNavigatingAway = true
+                                    val fullUrl = com.mediadeck.app.util.smb.SmbScanner.buildSmbUrl(
+                                        host = settings.smbHost,
+                                        port = settings.smbPort,
+                                        share = activeShare,
+                                        subpath = browseSubpathBySession
+                                    )
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        (if (settings.language == "en") "Scanning: " else "Memindai: ") + activeShare,
+                                        android.widget.Toast.LENGTH_SHORT
+                                    ).show()
+                                    scannerViewModel.saveLibraryFolder(context, fullUrl, type)
+                                    settingsViewModel.clearBrowserState()
+                                    scannerViewModel.runFolderScan(fullUrl, type)
+                                }
+                            }
+                            val label = when (scanType) {
                                 "comics" -> t("Scan Comics Here", "Pindai Komik di Sini")
                                 "movies" -> t("Scan Movies Here", "Pindai Film di Sini")
                                 else -> t("Scan Gallery Here", "Pindai Galeri di Sini")
                             }
-                            Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                            Button(
+                                onClick = {
+                                    triggerScan(
+                                        when (scanType) {
+                                            "comics" -> "comics"
+                                            "movies" -> "movies"
+                                            else -> "gallery"
+                                        }
+                                    )
+                                },
+                                modifier = Modifier.fillMaxWidth().height(44.dp),
+                                shape = CircleShape,
+                                enabled = !isNavigatingAway,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = DeckAccentBlue,
+                                    contentColor = DeckOnAccent,
+                                ),
+                            ) {
+                                Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(label, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }

@@ -1,42 +1,41 @@
 package com.mediadeck.app.ui.screens
-import android.net.Uri
-import android.widget.MediaController
-import android.widget.VideoView
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.scrollBy
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.calculateCentroid
-import androidx.compose.foundation.gestures.calculateCentroidSize
-import androidx.compose.foundation.gestures.calculatePan
-import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -59,19 +58,20 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.PictureInPicture
-import androidx.compose.material.icons.filled.RotateLeft
-import androidx.compose.material.icons.filled.RotateRight
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.automirrored.filled.RotateLeft
 import androidx.compose.material.icons.automirrored.filled.RotateRight
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -88,6 +88,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -98,21 +103,20 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.input.pointer.PointerEventType
-import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -120,7 +124,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.net.toUri
+import androidx.core.content.ContextCompat
 import coil3.compose.SubcomposeAsyncImage
 import coil3.imageLoader
 import coil3.request.ImageRequest
@@ -131,17 +135,18 @@ import com.mediadeck.app.data.gallery.GalleryItem
 import com.mediadeck.app.ui.components.DeleteConfirmationDialog
 import com.mediadeck.app.ui.components.ZoomableMediaBox
 import com.mediadeck.app.util.i18n.t
-import com.mediadeck.app.util.smb.SmbContentProvider
+import com.mediadeck.app.util.media.MediaUtils
 import com.mediadeck.app.util.scan.ScannerStateManager
 import com.mediadeck.app.viewmodel.GalleryViewModel
 import com.mediadeck.app.viewmodel.MovieViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlin.math.abs
 @androidx.media3.common.util.UnstableApi
 @OptIn(ExperimentalMaterial3Api::class, kotlinx.coroutines.FlowPreview::class)
 @Composable
@@ -160,7 +165,8 @@ fun GalleryViewerScreen(
         }
     }
     val context = LocalContext.current
-    val compactViewer = LocalConfiguration.current.screenHeightDp < 500
+    val screenHeightDp = LocalConfiguration.current.screenHeightDp
+    val compactViewer = screenHeightDp < 500
     val items by viewModel.filteredGalleryItems.collectAsState()
     val clipboard = LocalClipboard.current
     val coroutineScope = rememberCoroutineScope()
@@ -174,20 +180,60 @@ fun GalleryViewerScreen(
             }
         }
     }
-    val initialIndex = remember(itemId, items) {
-        items.indexOfFirst { it.id == itemId }.coerceAtLeast(0)
-    }
+
+    val initialIndex = remember { items.indexOfFirst { it.id == itemId }.coerceAtLeast(0) }
     val pagerState = rememberPagerState(
         initialPage = initialIndex,
     ) { items.size }
+
+
+    var currentId by remember { mutableLongStateOf(itemId) }
+    val latestItems by rememberUpdatedState(items)
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.settledPage }.collect { page ->
+            latestItems.getOrNull(page)?.let { currentId = it.id }
+        }
+    }
+    LaunchedEffect(items) {
+        val idx = items.indexOfFirst { it.id == currentId }
+        if (idx >= 0) {
+            if (idx != pagerState.currentPage) pagerState.scrollToPage(idx)
+        } else if (items.isNotEmpty()) {
+
+            currentId = items[pagerState.currentPage.coerceIn(0, items.lastIndex)].id
+        }
+    }
     var isPagerScrollEnabled by remember { mutableStateOf(true) }
     val currentIndex = pagerState.currentPage
     PreloadGalleryNeighbors(items, currentIndex)
+    val toastCopied = t("URL path copied!", "Jalur URL disalin!")
+    val toastSaved = t("Saved successfully!", "Disimpan!")
+    val downloadOk = t("Saved to Downloads", "Disimpan ke folder Unduhan")
+    val downloadFail = t("Download failed", "Gagal mengunduh")
+    val downloadDenied = t("Storage permission denied", "Izin penyimpanan ditolak")
+    var pendingDownload by remember { mutableStateOf<GalleryItem?>(null) }
+    val performLocalDownload: (GalleryItem) -> Unit = { target ->
+        coroutineScope.launch {
+            val ok = withContext(Dispatchers.IO) { saveToDownloads(context, target) }
+            Toast.makeText(context, if (ok) downloadOk else downloadFail, Toast.LENGTH_SHORT).show()
+        }
+    }
+    val storagePermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val target = pendingDownload
+        pendingDownload = null
+        if (granted && target != null) {
+            performLocalDownload(target)
+        } else if (!granted) {
+            Toast.makeText(context, downloadDenied, Toast.LENGTH_SHORT).show()
+        }
+    }
     val currentItem = remember(currentIndex, items) {
         if (items.isNotEmpty() && currentIndex < items.size) items[currentIndex] else null
     }
     if (currentItem == null) {
         LaunchedEffect(Unit) {
+
+            delay(600.milliseconds)
             onBack()
         }
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -206,10 +252,14 @@ fun GalleryViewerScreen(
         onBack()
     }
     var showUi by remember { mutableStateOf(value = true) }
-    var isFitMode by remember(currentIndex) { mutableStateOf(value = true) }
+    var isFitMode by remember(currentItem.id) { mutableStateOf(value = true) }
     var isMuted by remember { mutableStateOf(value = false) }
-    var rotationDegrees by remember(currentIndex) { mutableFloatStateOf(0f) }
+    var rotationDegrees by remember(currentItem.id) { mutableFloatStateOf(0f) }
     var showSidebarDetail by remember { mutableStateOf(false) }
+
+    LaunchedEffect(currentItem.id) { isPagerScrollEnabled = true }
+
+    BackHandler(enabled = showSidebarDetail) { showSidebarDetail = false }
     var albumNameInput by remember(currentItem.id) { mutableStateOf(currentItem.folderName) }
     var tagsInput by remember(currentItem.id) { mutableStateOf(currentItem.tags) }
     LaunchedEffect(showUi, showSidebarDetail) {
@@ -266,7 +316,7 @@ fun GalleryViewerScreen(
                         }
                         Key.MoveEnd -> {
                             coroutineScope.launch {
-                                pagerState.animateScrollToPage(items.size - 1)
+                                pagerState.animateScrollToPage((items.size - 1).coerceAtLeast(0))
                             }
                             true
                         }
@@ -288,47 +338,80 @@ fun GalleryViewerScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(0.dp),
                 userScrollEnabled = isPagerScrollEnabled,
+
+                key = { index -> items.getOrNull(index)?.id ?: index },
             ) { page ->
                 val pageItem = items.getOrNull(page)
                 if (pageItem != null) {
-                    GalleryPageItem(
-                        item = pageItem,
-                        isFitMode = isFitMode,
-                        isMuted = isMuted,
-                        rotation = if (page == currentIndex) rotationDegrees else 0f,
-                        onToggleUi = { showUi = !showUi },
-                        onSwipeUp = {
-                            showSidebarDetail = true
-                            showUi = true
-                        },
-                        onSwipeDown = {
-                            if (showSidebarDetail) {
-                                showSidebarDetail = false
-                            } else {
-                                onBack()
+                    val pageOffset = ((pagerState.currentPage - page) + pagerState.currentPageOffsetFraction)
+                    val absOffset = kotlin.math.abs(pageOffset).coerceIn(0f, 1f)
+                    val pageModifier = when (settings.galleryTransition) {
+                        "fade" -> Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                translationX = pageOffset * size.width
+                                alpha = (1f - absOffset).coerceIn(0f, 1f)
                             }
-                        },
-                        onScaleChange = { scaleValue ->
-                            isPagerScrollEnabled = scaleValue <= 1.05f
-                        },
-                        onOverSwipeHorizontal = { deltaValue ->
-                            coroutineScope.launch {
-                                pagerState.scrollBy(deltaValue)
-                            }
-                        },
-                        onDragStopped = {
-                            coroutineScope.launch {
-                                val targetPage = if (pagerState.currentPageOffsetFraction > 0.5f) {
-                                    pagerState.currentPage + 1
-                                } else if (pagerState.currentPageOffsetFraction < -0.5f) {
-                                    pagerState.currentPage - 1
+                        "curl" -> Modifier
+                            .fillMaxSize()
+                            .zIndex(if (pageOffset >= 0f) 1f else 0f)
+                            .graphicsLayer {
+                                translationX = pageOffset * size.width
+                                cameraDistance = 16f * density
+                                if (pageOffset > 0f) {
+                                    transformOrigin = TransformOrigin(0f, 0.5f)
+                                    rotationY = -90f * pageOffset.coerceIn(0f, 1f)
+                                    alpha = if (pageOffset >= 1f) 0f else (1f - pageOffset * 0.7f).coerceIn(0f, 1f)
                                 } else {
-                                    pagerState.currentPage
+                                    transformOrigin = TransformOrigin(0.5f, 0.5f)
+                                    rotationY = 0f
+                                    alpha = if (pageOffset <= -1f) 0f else 1f
                                 }
-                                pagerState.animateScrollToPage(targetPage.coerceIn(0, items.size - 1))
                             }
-                        }
-                    )
+                        else -> Modifier.fillMaxSize()
+                    }
+                    Box(modifier = pageModifier) {
+                        GalleryPageItem(
+                            item = pageItem,
+                            isFitMode = isFitMode,
+                            isMuted = isMuted,
+                            rotation = if (page == currentIndex) rotationDegrees else 0f,
+                            isCurrentPage = page == pagerState.settledPage,
+                            onToggleUi = { showUi = !showUi },
+                            onSwipeUp = {
+                                showSidebarDetail = true
+                                showUi = true
+                            },
+                            onSwipeDown = {
+                                if (showSidebarDetail) {
+                                    showSidebarDetail = false
+                                } else {
+                                    onBack()
+                                }
+                            },
+                            onScaleChange = { scaleValue ->
+                                isPagerScrollEnabled = scaleValue <= 1.05f
+                            },
+                            onOverSwipeHorizontal = { deltaValue ->
+                                coroutineScope.launch {
+                                    pagerState.scrollBy(deltaValue)
+                                }
+                            },
+                            onDragStopped = {
+                                coroutineScope.launch {
+                                    if (items.isEmpty()) return@launch
+                                    val targetPage = if (pagerState.currentPageOffsetFraction > 0.5f) {
+                                        pagerState.currentPage + 1
+                                    } else if (pagerState.currentPageOffsetFraction < -0.5f) {
+                                        pagerState.currentPage - 1
+                                    } else {
+                                        pagerState.currentPage
+                                    }
+                                    pagerState.animateScrollToPage(targetPage.coerceIn(0, items.size - 1))
+                                }
+                            }
+                        )
+                    }
                 }
             }
             AnimatedVisibility(
@@ -339,7 +422,13 @@ fun GalleryViewerScreen(
             ) {
                 TopAppBar(
                     title = {
-                        Text(currentItem.name, fontSize = 16.sp, maxLines = 1, modifier = Modifier.basicMarquee())
+                        Text(
+                            currentItem.name.substringBeforeLast('.', currentItem.name),
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            modifier = Modifier.basicMarquee(),
+                        )
                     },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
@@ -349,7 +438,7 @@ fun GalleryViewerScreen(
                     actions = {
                         IconButton(onClick = { viewModel.toggleGalleryFavorite(currentItem) }) {
                             Icon(
-                                if (currentItem.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                                if (currentItem.isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
                                 contentDescription = t("Favorite", "Favorit"),
                                 tint = if (currentItem.isFavorite) Color.Red else Color.White,
                             )
@@ -358,11 +447,12 @@ fun GalleryViewerScreen(
                             Icon(Icons.Outlined.Info, contentDescription = t("Info & Album Details", "Info & Album"))
                         }
                         IconButton(onClick = { showDeleteDialog = true }) {
-                            Icon(Icons.Default.Delete, contentDescription = t("Delete", "Hapus"))
+                            Icon(Icons.Outlined.Delete, contentDescription = t("Delete", "Hapus"))
                         }
                     },
+                    expandedHeight = 56.dp,
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.Black.copy(alpha = 0.65f),
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                         titleContentColor = Color.White,
                         navigationIconContentColor = Color.White,
                         actionIconContentColor = Color.White,
@@ -376,14 +466,14 @@ fun GalleryViewerScreen(
                 modifier = Modifier.align(Alignment.BottomCenter)
             ) {
                 Surface(
-                    color = Color.Black.copy(alpha = 0.65f),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .navigationBarsPadding()
-                            .padding(horizontal = 16.dp, vertical = if (compactViewer) 6.dp else 16.dp),
+                            .padding(start = 16.dp, end = 6.dp, top = if (compactViewer) 6.dp else 12.dp, bottom = if (compactViewer) 6.dp else 12.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Row(
@@ -391,12 +481,19 @@ fun GalleryViewerScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(
-                                t("Item ${currentIndex + 1} of ${items.size}", "Item ${currentIndex + 1} dari ${items.size}"),
-                                color = Color.White,
-                                fontSize = 14.sp,
-                            )
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text("${currentIndex + 1}", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                    Text(" / ${items.size}", color = Color.White.copy(alpha = 0.6f), fontSize = 18.sp)
+                                }
+                            }
+                            Row {
                                 val isVideo = currentItem.mimeType.contains("video", ignoreCase = true)
                                 if (!isVideo) {
                                     IconButton(onClick = { rotationDegrees += 90f }, colors = IconButtonDefaults.iconButtonColors(contentColor = Color.White)) {
@@ -415,12 +512,18 @@ fun GalleryViewerScreen(
                                 }
                                 IconButton(
                                     onClick = {
-                                        val uri = currentItem.uri
-                                        val name = currentItem.name
-                                        if (com.mediadeck.app.util.media.MediaUtils.isSmbUri(uri)) {
-                                            movieViewModel.downloadSmbFile(context, uri, name)
+                                        val target = currentItem
+                                        if (MediaUtils.isSmbUri(target.uri)) {
+                                            movieViewModel.downloadSmbFile(context, target.uri, target.name)
                                         } else {
-                                            android.widget.Toast.makeText(context, if (settings.language == "en") "File is already stored locally!" else "File sudah tersimpan secara lokal!", android.widget.Toast.LENGTH_SHORT).show()
+                                            val needsPermission = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+                                                    ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
+                                            if (needsPermission) {
+                                                pendingDownload = target
+                                                storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                                            } else {
+                                                performLocalDownload(target)
+                                            }
                                         }
                                     },
                                     colors = IconButtonDefaults.iconButtonColors(contentColor = Color.White),
@@ -433,12 +536,12 @@ fun GalleryViewerScreen(
                 }
             }
             AnimatedVisibility(
-                visible = showUi && !showSidebarDetail,
+                visible = showUi,
                 enter = fadeIn(),
                 exit = fadeOut(),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
+                    .padding(horizontal = 12.dp)
                     .align(Alignment.Center),
             ) {
                 Row(
@@ -480,6 +583,23 @@ fun GalleryViewerScreen(
                     }
                 }
             }
+
+            AnimatedVisibility(
+                visible = showSidebarDetail,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.5f))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { showSidebarDetail = false },
+                )
+            }
             AnimatedVisibility(
                 visible = showSidebarDetail,
                 enter = slideInVertically(initialOffsetY = { it }),
@@ -489,227 +609,189 @@ fun GalleryViewerScreen(
                     .align(Alignment.BottomCenter),
             ) {
                 val safeItem = currentItem
-                if (safeItem != null) {
-                    val sizeKb = safeItem.size / 1024
-                    val sizeMb = sizeKb.toDouble() / 1024
-                    val sizeFormatted = if (sizeMb > 1.0) "%.1f MB".format(sizeMb) else "$sizeKb KB"
-                    val dateFormat = remember { SimpleDateFormat("dd MMMM yyyy, HH:mm", Locale.getDefault()) }
-                    val dateText = remember(safeItem.dateAdded) { dateFormat.format(Date(safeItem.dateAdded)) }
-                    Surface(
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
-                        tonalElevation = 8.dp,
-                        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+                val sizeFormatted = remember(safeItem.size) { formatMediaSize(safeItem.size) }
+                val dateText = remember(safeItem.dateAdded) { formatMediaDate(safeItem.dateAdded) }
+                val tagList = remember(safeItem.tags) {
+                    safeItem.tags.split(",").map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+                }
+                val maxSheetHeight = (screenHeightDp * (if (compactViewer) 0.96f else 0.92f)).dp
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = maxSheetHeight)
+                        .pointerInput(Unit) {
+                            var totalDragY = 0f
+                            detectVerticalDragGestures(
+                                onDragStart = { totalDragY = 0f },
+                                onDragEnd = {
+                                    if (totalDragY > 100f) {
+                                        showSidebarDetail = false
+                                    }
+                                },
+                                onDragCancel = { totalDragY = 0f },
+                                onVerticalDrag = { change, dragAmount ->
+                                    change.consume()
+                                    totalDragY += dragAmount
+                                },
+                            )
+                        },
+                ) {
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .fillMaxHeight(if (compactViewer) 0.96f else 0.82f)
                             .navigationBarsPadding()
-                            .pointerInput(Unit) {
-                                var totalDragY = 0f
-                                detectVerticalDragGestures(
-                                    onDragStart = { totalDragY = 0f },
-                                    onDragEnd = {
-                                        if (totalDragY > 100f) {
-                                            showSidebarDetail = false
-                                        }
-                                    },
-                                    onDragCancel = { totalDragY = 0f },
-                                    onVerticalDrag = { change, dragAmount ->
-                                        change.consume()
-                                        totalDragY += dragAmount
-                                    },
-                                )
-                            },
+                            .verticalScroll(rememberScrollState())
+                            .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 20.dp),
                     ) {
-                        Column(
+                        Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .verticalScroll(rememberScrollState())
-                                .padding(horizontal = 20.dp, vertical = 16.dp),
+                                .align(Alignment.CenterHorizontally)
+                                .width(40.dp)
+                                .height(5.dp)
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)),
+                        )
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth(),
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.CenterHorizontally)
-                                    .width(40.dp)
-                                    .height(5.dp)
-                                    .clip(RoundedCornerShape(3.dp))
-                                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)),
+                            Icon(
+                                Icons.Outlined.Info,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(28.dp),
                             )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                            ) {
-                                Icon(
-                                    Icons.Outlined.Info,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    t("Details & Album", "Detail & Album"),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                IconButton(onClick = { showSidebarDetail = false }) {
-                                    Icon(Icons.Default.Close, contentDescription = t("Close", "Tutup"))
-                                }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                t("Details & Album", "Detail & Album"),
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.weight(1f),
+                            )
+                            IconButton(onClick = { showSidebarDetail = false }) {
+                                Icon(Icons.Default.Close, contentDescription = t("Close", "Tutup"))
                             }
-                            Card(
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                                ),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(12.dp),
-                                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                                ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                    ) {
-                                        Text(t("File Name:", "Nama File:"), fontSize = 13.sp, color = MaterialTheme.colorScheme.outline)
-                                        Text(safeItem.name, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                                    }
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                    ) {
-                                        Text(t("Format:", "Format:"), fontSize = 13.sp, color = MaterialTheme.colorScheme.outline)
-                                        Text(safeItem.mimeType, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                                    }
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                    ) {
-                                        Text(t("Size:", "Ukuran:"), fontSize = 13.sp, color = MaterialTheme.colorScheme.outline)
-                                        Text(sizeFormatted, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                                    }
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                    ) {
-                                        Text(t("Dimension:", "Dimensi:"), fontSize = 13.sp, color = MaterialTheme.colorScheme.outline)
-                                        val dimText = if (safeItem.width > 0 && safeItem.height > 0) {
-                                            "${safeItem.width} x ${safeItem.height}"
+                        }
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            ),
+                            shape = RoundedCornerShape(24.dp),
+                            modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 18.dp),
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    GalleryDetailRow(
+                                        t("File name", "Nama file"),
+                                        safeItem.name.substringBeforeLast('.', safeItem.name),
+                                    )
+                                    GalleryDetailRow(t("Format", "Format"), safeItem.mimeType)
+                                    GalleryDetailRow(t("Size", "Ukuran"), sizeFormatted)
+                                    GalleryDetailRow(
+                                        t("Dimension", "Dimensi"),
+                                        if (safeItem.width > 0 && safeItem.height > 0) {
+                                            "${safeItem.width} × ${safeItem.height}"
                                         } else {
                                             t("Loading...", "Memuat...")
-                                        }
-                                        Text(dimText, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                                    }
+                                        },
+                                    )
                                     if (safeItem.mimeType.contains("video", true) && safeItem.duration > 0) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                        ) {
-                                            Text(t("Duration:", "Durasi:"), fontSize = 13.sp, color = MaterialTheme.colorScheme.outline)
-                                            Text(com.mediadeck.app.util.media.MediaUtils.formatDuration(safeItem.duration), fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                                        }
-                                    }
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                    ) {
-                                        Text(t("Added On:", "Ditambahkan:"), fontSize = 13.sp, color = MaterialTheme.colorScheme.outline)
-                                        Text(dateText, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                                    }
-                                }
-                            }
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
-                                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    text = safeItem.uri,
-                                    fontSize = 11.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                IconButton(
-                                    onClick = {
-                                        coroutineScope.launch {
-                                            clipboard.setClipEntry(androidx.compose.ui.platform.ClipEntry(android.content.ClipData.newPlainText("URL", safeItem.uri)))
-                                        }
-                                        android.widget.Toast.makeText(context, if (settings.language == "en") "URL path copied!" else "Jalur URL disalin!", android.widget.Toast.LENGTH_SHORT).show()
-                                    },
-                                    modifier = Modifier.size(32.dp),
-                                ) {
-                                    Icon(Icons.Default.ContentCopy, contentDescription = t("Copy", "Salin"), modifier = Modifier.size(16.dp))
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    OutlinedTextField(
-                                        value = albumNameInput,
-                                        onValueChange = { albumNameInput = it },
-                                        label = { Text(t("Album", "Album"), fontSize = 11.sp) },
-                                        singleLine = true,
-                                        textStyle = TextStyle(fontSize = 12.sp),
-                                        modifier = Modifier.fillMaxWidth(),
-                                    )
-                                }
-                                Column(modifier = Modifier.weight(1.2f)) {
-                                    OutlinedTextField(
-                                        value = tagsInput,
-                                        onValueChange = { tagsInput = it },
-                                        label = { Text(t("Tags (comma)", "Tags (koma)"), fontSize = 11.sp) },
-                                        singleLine = true,
-                                        textStyle = TextStyle(fontSize = 12.sp),
-                                        modifier = Modifier.fillMaxWidth(),
-                                    )
-                                }
-                                IconButton(
-                                    onClick = {
-                                        viewModel.updateGalleryItemDetails(
-                                            safeItem,
-                                            newFolderName = albumNameInput,
-                                            newTags = tagsInput,
+                                        GalleryDetailRow(
+                                            t("Duration", "Durasi"),
+                                            com.mediadeck.app.util.media.MediaUtils.formatDuration(safeItem.duration),
                                         )
-                                        android.widget.Toast.makeText(context, if (settings.language == "en") "Saved successfully!" else "Disimpan!", android.widget.Toast.LENGTH_SHORT).show()
-                                    },
-                                    modifier = Modifier
-                                        .align(Alignment.CenterVertically)
-                                        .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
-                                        .size(42.dp),
-                                    colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.onPrimary),
-                                ) {
-                                    Icon(Icons.Default.Save, contentDescription = t("Save", "Simpan"))
+                                    }
+                                    GalleryDetailRow(t("Added on", "Ditambahkan"), dateText)
+                                }
+                                Spacer(modifier = Modifier.height(12.dp))
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = safeItem.uri,
+                                        fontSize = 16.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.MiddleEllipsis,
+                                        modifier = Modifier.weight(1f),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    IconButton(
+                                        onClick = {
+                                            coroutineScope.launch {
+                                                clipboard.setClipEntry(androidx.compose.ui.platform.ClipEntry(android.content.ClipData.newPlainText("URL", safeItem.uri)))
+                                            }
+                                            Toast.makeText(context, toastCopied, Toast.LENGTH_SHORT).show()
+                                        },
+                                        modifier = Modifier.size(40.dp),
+                                    ) {
+                                        Icon(Icons.Default.ContentCopy, contentDescription = t("Copy", "Salin"), modifier = Modifier.size(22.dp))
+                                    }
                                 }
                             }
-                            if (safeItem.tags.isNotEmpty()) {
-                                Text(
-                                    t("Click Tag to Filter:", "Klik Tag untuk Menyaring:"),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
-                                    color = MaterialTheme.colorScheme.outline,
-                                )
-                                LazyRow(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                ) {
-                                    items(safeItem.tags.split(",")) { rawTag ->
-                                        val tag = rawTag.trim()
-                                        if (tag.isNotEmpty()) {
-                                            AssistChip(
-                                                onClick = {
-                                                    onFilterTag(tag)
-                                                },
-                                                label = { Text("#$tag", fontSize = 11.sp) },
-                                            )
-                                        }
-                                    }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.Top,
+                        ) {
+                            OutlinedTextField(
+                                value = albumNameInput,
+                                onValueChange = { albumNameInput = it },
+                                label = { Text(t("Album", "Album")) },
+                                singleLine = true,
+                                textStyle = TextStyle(fontSize = 17.sp),
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.weight(1f),
+                            )
+                            OutlinedTextField(
+                                value = tagsInput,
+                                onValueChange = { tagsInput = it },
+                                label = { Text(t("Tags (comma)", "Tags (koma)")) },
+                                placeholder = { Text(t("Tags (comma)", "Tags (koma)")) },
+                                singleLine = true,
+                                textStyle = TextStyle(fontSize = 17.sp),
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.weight(1.2f),
+                            )
+                            IconButton(
+                                onClick = {
+                                    viewModel.updateGalleryItemDetails(
+                                        safeItem,
+                                        newFolderName = albumNameInput,
+                                        newTags = tagsInput,
+                                    )
+                                    Toast.makeText(context, toastSaved, Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier
+                                    .padding(top = 8.dp)
+                                    .size(56.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(MaterialTheme.colorScheme.primary),
+                                colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.onPrimary),
+                            ) {
+                                Icon(Icons.Default.Save, contentDescription = t("Save", "Simpan"))
+                            }
+                        }
+                        if (tagList.isNotEmpty()) {
+                            Text(
+                                t("Click Tag to Filter:", "Klik Tag untuk Menyaring:"),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(top = 16.dp, bottom = 4.dp),
+                                color = MaterialTheme.colorScheme.outline,
+                            )
+                            LazyRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                items(tagList, key = { it }) { tag ->
+                                    AssistChip(
+                                        onClick = { onFilterTag(tag) },
+                                        label = { Text("#$tag", fontSize = 11.sp) },
+                                    )
                                 }
                             }
                         }
@@ -717,54 +799,6 @@ fun GalleryViewerScreen(
                 }
             }
         }
-    }
-}
-suspend fun PointerInputScope.customDetectTransformGestures(
-    getScale: () -> Float,
-    isVideo: Boolean,
-    onGesture: (centroid: androidx.compose.ui.geometry.Offset, pan: androidx.compose.ui.geometry.Offset, zoom: Float) -> Unit,
-) {
-    if (isVideo) return
-    awaitEachGesture {
-        var zoom = 1f
-        var pan = androidx.compose.ui.geometry.Offset.Zero
-        var pastTouchSlop = false
-        val touchSlop = viewConfiguration.touchSlop
-        awaitFirstDown()
-        do {
-            val event = awaitPointerEvent()
-            val canceled = event.changes.any { it.isConsumed }
-            if (!canceled) {
-                val zoomChange = event.calculateZoom()
-                val panChange = event.calculatePan()
-                if (!pastTouchSlop) {
-                    zoom *= zoomChange
-                    pan += panChange
-                    val centroidSize = event.calculateCentroidSize(useCurrent = false)
-                    val zoomMotion = abs(1 - zoom) * centroidSize
-                    val panMotion = pan.getDistance()
-                    if (zoomMotion > touchSlop || panMotion > touchSlop) {
-                        pastTouchSlop = true
-                    }
-                }
-                if (pastTouchSlop) {
-                    val centroid = event.calculateCentroid(useCurrent = false)
-                    if (zoomChange != 1f || panChange != androidx.compose.ui.geometry.Offset.Zero) {
-                        onGesture(centroid, panChange, zoomChange)
-                    }
-                    val numFingers = event.changes.size
-                    val isPinching = numFingers > 1
-                    val isZoomedIn = getScale() > 1.05f
-                    if (isPinching || isZoomedIn) {
-                        event.changes.forEach {
-                            if (it.previousPosition != it.position) {
-                                it.consume()
-                            }
-                        }
-                    }
-                }
-            }
-        } while (!canceled && event.changes.any { it.pressed })
     }
 }
 @androidx.media3.common.util.UnstableApi
@@ -781,6 +815,7 @@ fun GalleryPageItem(
     onScaleChange: (Float) -> Unit = {},
     onOverSwipeHorizontal: (Float) -> Unit = {},
     onDragStopped: () -> Unit = {},
+    isCurrentPage: Boolean = true,
 ) {
     val isVideo = item.mimeType.contains("video", ignoreCase = true)
     var scale by remember { mutableFloatStateOf(1f) }
@@ -793,20 +828,6 @@ fun GalleryPageItem(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .pointerInput(Unit) {
-                awaitPointerEventScope {
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        if (event.type == PointerEventType.Scroll) {
-                            val delta = event.changes.firstOrNull()?.scrollDelta?.y ?: 0f
-                            if (delta != 0f && !isVideo) {
-                                val newScale = (scale - delta * 0.12f).coerceIn(1f, 5f)
-                                scale = newScale
-                            }
-                        }
-                    }
-                }
-            }
             .draggable(
                 state = draggableState,
                 orientation = Orientation.Vertical,
@@ -822,93 +843,74 @@ fun GalleryPageItem(
         contentAlignment = Alignment.Center,
     ) {
         if (isVideo) {
-            val context = LocalContext.current
-            var videoAspectRatio by remember { mutableFloatStateOf(16f / 9f) }
-            val exoPlayer = remember {
-                androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
-                    repeatMode = androidx.media3.common.Player.REPEAT_MODE_ALL
-                }
-            }
-            LaunchedEffect(item.uri) {
-                try {
-                    val mediaItem = androidx.media3.common.MediaItem.fromUri(item.uri)
-                    exoPlayer.setMediaItem(mediaItem)
-                    exoPlayer.prepare()
-                    exoPlayer.playWhenReady = true
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
-            LaunchedEffect(isMuted) {
-                exoPlayer.volume = if (isMuted) 0f else 1f
-            }
-            DisposableEffect(Unit) {
-                val listener = object : androidx.media3.common.Player.Listener {
-                    override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
-                        if (videoSize.width > 0 && videoSize.height > 0) {
-                            videoAspectRatio = videoSize.width.toFloat() / videoSize.height.toFloat()
-                        }
-                    }
-                }
-                exoPlayer.addListener(listener)
-                onDispose {
-                    exoPlayer.removeListener(listener)
-                    exoPlayer.release()
-                }
-            }
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(videoAspectRatio),
-            ) {
-                AndroidView(
-                    modifier = Modifier.fillMaxSize().testTag("video_player_view_${item.id}"),
-                    factory = { ctx ->
-                        androidx.media3.ui.PlayerView(ctx).apply {
-                            player = exoPlayer
-                            useController = true
-                            setShowNextButton(false)
-                            setShowPreviousButton(false)
-                        }
-                    },
-                    update = { view ->
-                        if (view.player != exoPlayer) {
-                            view.player = exoPlayer
-                        }
-                    },
-                    onRelease = { view ->
-                        view.player = null
-                    }
-                )
+
+
+            if (isCurrentPage) {
+                VideoPlayerPage(item = item, isMuted = isMuted, onToggleUi = onToggleUi)
             }
         } else {
             val context = LocalContext.current
+            val isSmb = remember(item.uri) { MediaUtils.isSmbUri(item.uri) }
             val originalRequest = remember(item.uri, context) {
                 galleryOriginalRequest(context, item.uri)
             }
-            ZoomableMediaBox(
-                onTap = onToggleUi,
-                onScaleChange = { s -> 
-                    scale = s
-                    onScaleChange(s) 
-                },
-                onOverSwipeHorizontal = onOverSwipeHorizontal,
-                onDragStopped = onDragStopped,
-                modifier = Modifier.fillMaxSize(),
-            ) { boxScale, boxOffset ->
-                SubcomposeAsyncImage(
-                    model = originalRequest,
-                    contentDescription = item.name,
-                    contentScale = if (isFitMode) ContentScale.Fit else ContentScale.None,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer(
-                            scaleX = boxScale,
-                            scaleY = boxScale,
-                            translationX = boxOffset.x,
-                            translationY = boxOffset.y,
-                            rotationZ = rotation,
-                        ),
+            var intrinsicSize by remember(item.id) { mutableStateOf(androidx.compose.ui.geometry.Size.Unspecified) }
+
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val containerWidth = constraints.maxWidth.toFloat()
+                val containerHeight = constraints.maxHeight.toFloat()
+
+                val normRotation = (kotlin.math.abs(rotation.toInt()) % 360)
+                val isRotated90 = normRotation == 90 || normRotation == 270
+
+                val rotationScale = remember(rotation, isFitMode, intrinsicSize, containerWidth, containerHeight) {
+                    if (isRotated90 && intrinsicSize.width > 0f && intrinsicSize.height > 0f && containerWidth > 0f && containerHeight > 0f) {
+                        val imgWidth = intrinsicSize.width
+                        val imgHeight = intrinsicSize.height
+
+                        val (w, h) = if (isFitMode) {
+                            val scaleFit = minOf(containerWidth / imgWidth, containerHeight / imgHeight)
+                            (imgWidth * scaleFit) to (imgHeight * scaleFit)
+                        } else {
+                            imgWidth to imgHeight
+                        }
+
+                        minOf(1f, containerWidth / h, containerHeight / w)
+                    } else {
+                        1f
+                    }
+                }
+
+                ZoomableMediaBox(
+                    onTap = onToggleUi,
+                    onScaleChange = { s ->
+                        scale = s
+                        onScaleChange(s)
+                    },
+                    onOverSwipeHorizontal = onOverSwipeHorizontal,
+                    onDragStopped = onDragStopped,
+                    modifier = Modifier.fillMaxSize(),
+                ) { boxScale, boxOffset ->
+                    val finalScale = boxScale * rotationScale
+                    SubcomposeAsyncImage(
+                        model = originalRequest,
+                        contentDescription = item.name,
+                        contentScale = if (isFitMode) ContentScale.Fit else ContentScale.None,
+                        onSuccess = { state ->
+                            val pSize = state.painter.intrinsicSize
+                            if (pSize.width > 0f && pSize.height > 0f) {
+                                intrinsicSize = pSize
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer(
+                                scaleX = finalScale,
+                                scaleY = finalScale,
+                                translationX = boxOffset.x,
+                                translationY = boxOffset.y,
+                                rotationZ = rotation,
+                            ),
                     loading = {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
@@ -942,25 +944,128 @@ fun GalleryPageItem(
                                     textAlign = TextAlign.Center,
                                 )
                                 Text(
-                                    text = t("SMB connection lost or image file is no longer accessible on the Samba Server.", "Koneksi SMB terputus atau berkas gambar tidak lagi dapat diakses di Server Samba."),
+                                    text = if (isSmb) {
+                                        t("SMB connection lost or image file is no longer accessible on the Samba Server.", "Koneksi SMB terputus atau berkas gambar tidak lagi dapat diakses di Server Samba.")
+                                    } else {
+                                        t("The image could not be opened. The file may be corrupted, moved, or deleted.", "Gambar tidak dapat dibuka. Berkas mungkin rusak, dipindahkan, atau dihapus.")
+                                    },
                                     color = Color.White.copy(alpha = 0.7f),
                                     fontSize = 12.sp,
                                     textAlign = TextAlign.Center,
                                     lineHeight = 16.sp,
                                 )
-                                Text(
-                                    text = t("Solution:\n1. Ensure the device is connected to the same local Wifi as the server.\n2. Check your Samba Server status.", "Solusi:\n1. Pastikan Perangkat terhubung ke Wifi lokal yang sama dengan server.\n2. Periksa status Server Samba Anda."),
-                                    color = Color.White.copy(alpha = 0.5f),
-                                    fontSize = 11.sp,
-                                    lineHeight = 15.sp,
-                                    textAlign = TextAlign.Center,
-                                )
+                                if (isSmb) {
+                                    Text(
+                                        text = t("Solution:\n1. Ensure the device is connected to the same local Wifi as the server.\n2. Check your Samba Server status.", "Solusi:\n1. Pastikan Perangkat terhubung ke Wifi lokal yang sama dengan server.\n2. Periksa status Server Samba Anda."),
+                                        color = Color.White.copy(alpha = 0.5f),
+                                        fontSize = 11.sp,
+                                        lineHeight = 15.sp,
+                                        textAlign = TextAlign.Center,
+                                    )
+                                }
                             }
                         }
                     },
                 )
             }
         }
+    }
+}
+}
+
+private fun android.content.Context.findLifecycleOwner(): androidx.lifecycle.LifecycleOwner? {
+    var c: android.content.Context? = this
+    while (c is android.content.ContextWrapper) {
+        if (c is androidx.lifecycle.LifecycleOwner) return c
+        c = c.baseContext
+    }
+    return null
+}
+
+@androidx.media3.common.util.UnstableApi
+@Composable
+private fun VideoPlayerPage(
+    item: GalleryItem,
+    isMuted: Boolean,
+    onToggleUi: () -> Unit,
+) {
+    val context = LocalContext.current
+    var videoAspectRatio by remember { mutableFloatStateOf(16f / 9f) }
+    val exoPlayer = remember {
+        androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
+            repeatMode = androidx.media3.common.Player.REPEAT_MODE_ALL
+        }
+    }
+    LaunchedEffect(item.uri) {
+        try {
+            exoPlayer.setMediaItem(androidx.media3.common.MediaItem.fromUri(item.uri))
+            exoPlayer.prepare()
+            exoPlayer.playWhenReady = true
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+    LaunchedEffect(isMuted) {
+        exoPlayer.volume = if (isMuted) 0f else 1f
+    }
+    DisposableEffect(exoPlayer) {
+        val listener = object : androidx.media3.common.Player.Listener {
+            override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
+                if (videoSize.width > 0 && videoSize.height > 0) {
+                    videoAspectRatio = videoSize.width.toFloat() / videoSize.height.toFloat()
+                }
+            }
+        }
+        exoPlayer.addListener(listener)
+
+        val owner = context.findLifecycleOwner()
+        var wasPlaying = false
+        val observer = object : LifecycleEventObserver {
+            override fun onStateChanged(source: androidx.lifecycle.LifecycleOwner, event: Lifecycle.Event) {
+                when (event) {
+                    Lifecycle.Event.ON_PAUSE -> {
+                        wasPlaying = exoPlayer.playWhenReady
+                        exoPlayer.pause()
+                    }
+                    Lifecycle.Event.ON_RESUME -> if (wasPlaying) exoPlayer.play()
+                    else -> Unit
+                }
+            }
+        }
+        owner?.lifecycle?.addObserver(observer)
+        onDispose {
+            owner?.lifecycle?.removeObserver(observer)
+            exoPlayer.removeListener(listener)
+            exoPlayer.release()
+        }
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(videoAspectRatio),
+    ) {
+        AndroidView(
+            modifier = Modifier.fillMaxSize().testTag("video_player_view_${item.id}"),
+            factory = { ctx ->
+                androidx.media3.ui.PlayerView(ctx).apply {
+                    player = exoPlayer
+                    useController = true
+                    setShowNextButton(false)
+                    setShowPreviousButton(false)
+                    controllerShowTimeoutMs = 4000
+                }
+            },
+            update = { view ->
+                if (view.player != exoPlayer) {
+                    view.player = exoPlayer
+                }
+
+                view.setOnClickListener { onToggleUi() }
+            },
+            onRelease = { view ->
+                view.player = null
+            }
+        )
     }
 }
 
@@ -976,17 +1081,55 @@ private fun PreloadGalleryNeighbors(items: List<GalleryItem>, currentIndex: Int)
             .map { it.uri }
     }
     LaunchedEffect(imageLoader, neighborUris) {
+
+        delay(300.milliseconds)
         neighborUris.forEach { uri ->
             imageLoader.enqueue(galleryOriginalRequest(context, uri))
         }
     }
 }
 
+
+private const val MAX_VIEWER_PIXELS = 3072
+
 private fun galleryOriginalRequest(context: android.content.Context, uri: String): ImageRequest =
     ImageRequest.Builder(context)
         .data(uri)
-        .size(Size.ORIGINAL)
-        .precision(Precision.EXACT)
+        .size(Size(MAX_VIEWER_PIXELS, MAX_VIEWER_PIXELS))
+        .precision(Precision.INEXACT)
         .memoryCachePolicy(CachePolicy.ENABLED)
         .diskCachePolicy(CachePolicy.DISABLED)
         .build()
+
+@Composable
+private fun GalleryDetailRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, fontSize = 17.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(modifier = Modifier.width(16.dp))
+        Text(
+            value,
+            fontSize = 17.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+    }
+}
+
+private fun formatMediaSize(bytes: Long): String = when {
+    bytes >= (1L shl 30) -> String.format(Locale.US, "%.1f GB", bytes / 1073741824.0)
+    bytes >= (1L shl 20) -> String.format(Locale.US, "%.1f MB", bytes / 1048576.0)
+    else -> "${(bytes / 1024L).coerceAtLeast(1L)} KB"
+}
+
+
+private fun formatMediaDate(value: Long): String {
+    if (value <= 0L) return "-"
+    val millis = if (value < 100_000_000_000L) value * 1000L else value
+    return SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault()).format(Date(millis))
+}

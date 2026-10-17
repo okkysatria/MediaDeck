@@ -1,40 +1,86 @@
 package com.mediadeck.app.ui.theme
+
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
-val MediaGreen = Color(0xFF10A37F)
-val MediaBlue = Color(0xFF339CFF)
-val MediaRed = Color(0xFFEF4444)
-val MidnightNavy = Color(0xFF0F172A)
-val SlateBackground = Color(0xFFF8FAFC)
-val SlateSurfaceVariant = Color(0xFFE2E8F0)
-val SlateOnSurfaceVariant = Color(0xFF475569)
-val SlateOutline = Color(0xFFCBD5E1)
-val SlateContainer = Color(0xFFF1F5F9)
-val CharcoalBackground = Color(0xFF181818)
-val CharcoalSurface = Color(0xFF1F1F1F)
-val CharcoalSurfaceVariant = Color(0xFF2D2D2D)
-val CharcoalOnSurfaceVariant = Color(0xFFE2E2E2)
-val CharcoalOutline = Color(0xFF3A3A3A)
-val CharcoalContainer = Color(0xFF2A2B32)
-val AmberGold = Color(0xFFE8A33D)
-val AmberBrown = Color(0xFF211B17)
-val AmberBackground = Color(0xFF1A1512)
-val AmberOnBackground = Color(0xFFF0E4D4)
-val AmberSurfaceVariant = Color(0xFF332B24)
-val AmberOnSurfaceVariant = Color(0xFFD6C4AE)
-val AmberOutline = Color(0xFF4A3F35)
-val AmberOutlineVariant = Color(0xFF362E27)
-val AmberContainer = Color(0xFF2A2420)
-val AmberOnContainer = Color(0xFFF5E6D3)
-val AmberSecondaryContainer = Color(0xFF1C1815)
-val AmberTertiary = Color(0xFFE45858)
-val MidnightPurple = Color(0xFFA78BFA)
-val MidnightDeep = Color(0xFF14101F)
-val PurpleSurface = Color(0xFF1B1629)
-val PurpleSurfaceVariant = Color(0xFF2D2640)
-val PurpleOnSurfaceVariant = Color(0xFFC9BFE0)
-val PurpleOutline = Color(0xFF473D5E)
-val PurpleOutlineVariant = Color(0xFF332B45)
-val PurpleContainer = Color(0xFF251F38)
-val PurpleOnContainer = Color(0xFFEDE6FF)
-val PurpleSecondaryContainer = Color(0xFF1A1626)
-val PurpleTertiary = Color(0xFFFB7185)
+
+data class DeckColors(
+    val background: Color,
+    val surface: Color,
+    val surfaceVariant: Color,
+    val accentBlue: Color,
+    val onAccent: Color,
+    val accentPillBg: Color,
+    val textPrimary: Color,
+    val textSecondary: Color,
+    val badgeRed: Color,
+    val divider: Color,
+)
+
+val DarkDeckColors = DeckColors(
+    background = Color(0xFF131417),
+    surface = Color(0xFF22252B),
+    surfaceVariant = Color(0xFF1F222A),
+    accentBlue = Color(0xFF4DA3FF),
+    onAccent = Color(0xFF06182B),
+    accentPillBg = Color(0x334DA3FF),
+    textPrimary = Color(0xFFF3F5F8),
+    textSecondary = Color(0xFFA9B0BD),
+    badgeRed = Color(0xFFC93A3F),
+    divider = Color(0x14FFFFFF),
+)
+
+val LightDeckColors = DeckColors(
+    background = Color(0xFFF6F8FA),
+    surface = Color(0xFFFFFFFF),
+    surfaceVariant = Color(0xFFEEF1F4),
+    accentBlue = Color(0xFF1972E8),
+    onAccent = Color.White,
+    accentPillBg = Color(0x1F1972E8),
+    textPrimary = Color(0xFF1F2328),
+    textSecondary = Color(0xFF656D76),
+    badgeRed = Color(0xFFD93025),
+    divider = Color(0x1F000000),
+)
+
+val LocalDeckColors = staticCompositionLocalOf { DarkDeckColors }
+
+val DeckBackground: Color
+    @Composable
+    get() = LocalDeckColors.current.background
+
+val DeckSurface: Color
+    @Composable
+    get() = LocalDeckColors.current.surface
+
+val DeckSurfaceVariant: Color
+    @Composable
+    get() = LocalDeckColors.current.surfaceVariant
+
+val DeckAccentBlue: Color
+    @Composable
+    get() = LocalDeckColors.current.accentBlue
+
+val DeckOnAccent: Color
+    @Composable
+    get() = LocalDeckColors.current.onAccent
+
+val DeckAccentPillBg: Color
+    @Composable
+    get() = LocalDeckColors.current.accentPillBg
+
+val DeckTextPrimary: Color
+    @Composable
+    get() = LocalDeckColors.current.textPrimary
+
+val DeckTextSecondary: Color
+    @Composable
+    get() = LocalDeckColors.current.textSecondary
+
+val DeckBadgeRed: Color
+    @Composable
+    get() = LocalDeckColors.current.badgeRed
+
+val DeckDivider: Color
+    @Composable
+    get() = LocalDeckColors.current.divider
