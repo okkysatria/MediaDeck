@@ -89,7 +89,7 @@ class MainActivity : ComponentActivity() {
                 }
                 while (true) {
                     settingsViewModel.checkSmbStatus()
-                    kotlinx.coroutines.delay(10.seconds) 
+                    kotlinx.coroutines.delay(10.seconds)
                 }
             }
         }

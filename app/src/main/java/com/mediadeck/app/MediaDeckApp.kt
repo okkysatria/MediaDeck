@@ -8,7 +8,7 @@ class MediaDeckApp : Application() {
         try {
             val field = android.database.CursorWindow::class.java.getDeclaredField("sCursorWindowSize")
             field.isAccessible = true
-            field.set(null, 5 * 1024 * 1024) 
+            field.set(null, 5 * 1024 * 1024)
         } catch (e: Exception) {
             e.printStackTrace()
         }

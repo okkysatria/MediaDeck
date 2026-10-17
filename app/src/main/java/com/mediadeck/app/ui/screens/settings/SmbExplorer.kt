@@ -351,7 +351,7 @@ fun SmbExplorer(
                             }
                         }
                         Button(
-                            onClick = { 
+                            onClick = {
                                 triggerScan(when(scanType) {
                                     "comics" -> "comics"
                                     "movies" -> "movies"

@@ -51,3 +51,5 @@ id_rsa*
 *~
 captures/
 .artifacts/
+__pycache__/
+*.pyc

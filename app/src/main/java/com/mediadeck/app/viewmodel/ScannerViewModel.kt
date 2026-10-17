@@ -205,8 +205,8 @@ class ScannerViewModel @Inject constructor(
                                 repository.getAllComicsDirect().associateBy { it.folderUri.removeSuffix("/") }.toMutableMap()
                             )
                         }
-                        val galleryByFolder = allExistingGallery.values.groupBy { 
-                            it.uri.substringBeforeLast('/', "") + "/" 
+                        val galleryByFolder = allExistingGallery.values.groupBy {
+                            it.uri.substringBeforeLast('/', "") + "/"
                         }.toMutableMap()
                         val folderCache = if (isManualRefresh) emptyMap() else withContext(Dispatchers.IO) { repository.getScannedFolders().associateBy { it.folderUri.removeSuffix("/") }.mapValues { it.value.lastModified } }
                         val dedupeTracker = ScanDedupeTracker()
@@ -578,8 +578,8 @@ class ScannerViewModel @Inject constructor(
                     _scanProgress.value = com.mediadeck.app.util.i18n.translate(lang, "Starting scan...", "Memulai pemindaian...")
                     try {
                         val (allExistingGallery, allExistingMovies, allExistingComics) = withContext(Dispatchers.IO) { Triple(repository.getAllGalleryItemsDirect().associateBy { it.uri }.toMutableMap(), repository.getAllMoviesDirect().associateBy { it.uri }.toMutableMap(), repository.getAllComicsDirect().associateBy { it.folderUri.removeSuffix("/") }.toMutableMap()) }
-                        val galleryByFolder = allExistingGallery.values.groupBy { 
-                            it.uri.substringBeforeLast('/', "") + "/" 
+                        val galleryByFolder = allExistingGallery.values.groupBy {
+                            it.uri.substringBeforeLast('/', "") + "/"
                         }.toMutableMap()
                         val dedupeTracker = ScanDedupeTracker()
                         val mapMutex = Mutex()
@@ -629,13 +629,13 @@ class ScannerViewModel @Inject constructor(
                         }
                         val safePrefix = folderUriStr.removeSuffix("/").let { if (it.endsWith("/")) it else "$it/" }
                         val currentFolders = withContext(Dispatchers.IO) {
-                            (repository.getAllMoviesDirect().filter { 
+                            (repository.getAllMoviesDirect().filter {
                                 val uP = if (it.uri.endsWith("/")) it.uri else "${it.uri}/"
-                                uP.startsWith(safePrefix) 
+                                uP.startsWith(safePrefix)
                             }.map { com.mediadeck.app.util.media.MediaFolderIdentity.key(it.folderUri, it.uri) } +
-                                    repository.getAllGalleryItemsDirect().filter { 
+                                    repository.getAllGalleryItemsDirect().filter {
                                         val uP = if (it.uri.endsWith("/")) it.uri else "${it.uri}/"
-                                        uP.startsWith(safePrefix) 
+                                        uP.startsWith(safePrefix)
                                     }.map { com.mediadeck.app.util.media.MediaFolderIdentity.key(it.folderUri, it.uri) }).distinct()
                         }
                         currentFolders.forEach { folderKey ->

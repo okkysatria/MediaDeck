@@ -408,7 +408,7 @@ fun VideoPlayerScreen(
                                 viewModel.openMovie(playlist[nextIndex])
                             }
                         }
-                        PlaybackMode.OFF -> Unit 
+                        PlaybackMode.OFF -> Unit
                     }
                 }
             }

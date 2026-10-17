@@ -888,9 +888,9 @@ fun GalleryPageItem(
             }
             ZoomableMediaBox(
                 onTap = onToggleUi,
-                onScaleChange = { s -> 
+                onScaleChange = { s ->
                     scale = s
-                    onScaleChange(s) 
+                    onScaleChange(s)
                 },
                 onOverSwipeHorizontal = onOverSwipeHorizontal,
                 onDragStopped = onDragStopped,
