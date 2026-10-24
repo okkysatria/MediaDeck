@@ -1,6 +1,5 @@
 package com.mediadeck.app.util.smb
 import android.content.Context
-import com.mediadeck.app.data.AppDatabase
 import com.mediadeck.app.data.settings.AppSettings
 import org.codelibs.jcifs.smb.CIFSContext
 import org.codelibs.jcifs.smb.config.PropertyConfiguration
@@ -36,7 +35,6 @@ object SmbConnectionManager {
     private const val AUTH_GUEST_UPPER = 1
     private const val AUTH_ANON = 2
     private const val AUTH_GUEST_LOWER = 3
-    fun getCachedContext(): CIFSContext? = cachedContext
     suspend fun getContext(context: Context, providedSettings: AppSettings? = null): CIFSContext {
         val databaseSettings = providedSettings ?: withContext(Dispatchers.IO) {
             val entryPoint = dagger.hilt.android.EntryPointAccessors.fromApplication(

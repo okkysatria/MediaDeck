@@ -1,5 +1,5 @@
 package com.mediadeck.app.util.scan
-import android.net.Uri
+import androidx.core.net.toUri
 import com.mediadeck.app.util.media.MediaFolderIdentity
 object ScanProgressFormatter {
     private fun scanningPrefix(text: String): String? = when {
@@ -11,7 +11,7 @@ object ScanProgressFormatter {
         val prefix = scanningPrefix(text) ?: return null
         val rawLocation = text.removePrefix(prefix).trim()
         if (rawLocation.isBlank()) return null
-        val scheme = Uri.parse(rawLocation).scheme?.lowercase()
+        val scheme = rawLocation.toUri().scheme?.lowercase()
         return if (scheme == "content" || scheme == "file" || scheme == "smb") {
             MediaFolderIdentity.displayName(rawLocation, rawLocation, rawLocation)
         } else {

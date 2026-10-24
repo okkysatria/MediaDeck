@@ -1,7 +1,7 @@
 @file:OptIn(kotlinx.coroutines.FlowPreview::class)
 package com.mediadeck.app.ui.screens
 
-import android.net.Uri
+import androidx.core.net.toUri
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -10,13 +10,11 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -63,7 +61,6 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
@@ -98,7 +95,6 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -112,7 +108,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
@@ -122,10 +117,11 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -141,7 +137,6 @@ import androidx.compose.ui.graphics.luminance
 import com.mediadeck.app.ui.components.DeleteConfirmationDialog
 import com.mediadeck.app.ui.components.DraggableGridScrollbar
 import com.mediadeck.app.ui.components.MediaDeckHeader
-import com.mediadeck.app.ui.components.ScanDetailBottomSheet
 import com.mediadeck.app.ui.components.ScanStatusCard
 import com.mediadeck.app.ui.components.rememberBottomBarPadding
 import com.mediadeck.app.ui.theme.DeckAccentBlue
@@ -163,7 +158,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ComicsScreen(
     viewModel: ComicViewModel,
@@ -190,15 +185,12 @@ fun ComicsScreen(
     val heroComic by viewModel.heroComic.collectAsState()
     val countFormat = remember { NumberFormat.getIntegerInstance() }
 
-    val onMenuVisibilityChange: (Boolean) -> Unit = remember { {} }
-
     var isSearchingLocal by rememberSaveable { mutableStateOf(false) }
     val isSearching = isSearchingLocal || search.isNotEmpty()
     var groupByFolder by rememberSaveable { mutableStateOf(false) }
     var showMainMenu by remember { mutableStateOf(false) }
     var showSortDialog by remember { mutableStateOf(false) }
     var isTagsPanelExpanded by remember { mutableStateOf(false) }
-    var showScanDetailSheet by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
     var scanStartCount by remember { mutableIntStateOf(-1) }
@@ -209,7 +201,7 @@ fun ComicsScreen(
             scanStartCount = comics.size
             scanCompleteAdded = 0
         } else if (scanStartCount >= 0) {
-            delay(400)
+            delay(400.milliseconds)
             val added = comics.size - scanStartCount
             if (added > 0) scanCompleteAdded = added
             scanStartCount = -1
@@ -413,7 +405,6 @@ fun ComicsScreen(
                         isScanPaused = isScanPaused,
                         onTogglePause = { scannerViewModel.togglePauseScan() },
                         onStopScan = { scannerViewModel.stopScan() },
-                        onOpenDetail = { showScanDetailSheet = true },
                     )
                 }
                 AnimatedVisibility(
@@ -464,7 +455,8 @@ fun ComicsScreen(
 
 
                     val bottomBarPadding = rememberBottomBarPadding(16.dp)
-                    val screenWidthDp = LocalConfiguration.current.screenWidthDp
+                    val containerWidth = LocalWindowInfo.current.containerSize.width
+                    val screenWidthDp = with(LocalDensity.current) { containerWidth.toDp().value.toInt() }
                     val gridCells = when {
                         isTitleOnly -> GridCells.Fixed(1)
                         settings.gridColumns == 1 -> if (screenWidthDp >= 600) GridCells.Fixed(2) else GridCells.Fixed(1)
@@ -514,7 +506,6 @@ fun ComicsScreen(
                                             viewModel = viewModel,
                                             onDownloadComic = onDownloadComic,
                                             showClearHistory = activeTab == "history",
-                                            onMenuVisibilityChange = onMenuVisibilityChange,
                                         )
                                     }
                                 }
@@ -529,7 +520,6 @@ fun ComicsScreen(
                                         viewModel = viewModel,
                                         onDownloadComic = onDownloadComic,
                                         showClearHistory = activeTab == "history",
-                                        onMenuVisibilityChange = onMenuVisibilityChange,
                                     )
                                 }
                             }
@@ -552,16 +542,6 @@ fun ComicsScreen(
             onSelect = { viewModel.setComicSort(it); showSortDialog = false },
             onDismiss = { showSortDialog = false },
             onBack = { showSortDialog = false; showMainMenu = true },
-        )
-    }
-    if (showScanDetailSheet && scanProgress != null) {
-        ScanDetailBottomSheet(
-            scanProgress = scanProgress,
-            isScanActive = isScanActive,
-            isScanPaused = isScanPaused,
-            onTogglePause = { scannerViewModel.togglePauseScan() },
-            onStopScan = { scannerViewModel.stopScan() },
-            onDismiss = { showScanDetailSheet = false },
         )
     }
     if (showDeleteConfirm) {
@@ -675,7 +655,6 @@ private fun ComicEntry(
     viewModel: ComicViewModel,
     onDownloadComic: ((Comic) -> Unit)?,
     showClearHistory: Boolean,
-    onMenuVisibilityChange: (Boolean) -> Unit,
 ) {
     if (isTitleOnly) {
         ComicListItem(
@@ -686,7 +665,6 @@ private fun ComicEntry(
             viewModel = viewModel,
             onDownloadComic = onDownloadComic,
             showClearHistory = showClearHistory,
-            onMenuVisibilityChange = onMenuVisibilityChange,
         )
     } else {
         ComicCard(
@@ -697,7 +675,6 @@ private fun ComicEntry(
             viewModel = viewModel,
             onDownloadComic = onDownloadComic,
             showClearHistory = showClearHistory,
-            onMenuVisibilityChange = onMenuVisibilityChange,
         )
     }
 }
@@ -740,11 +717,6 @@ fun HeroComicCard(
             comic.isFavorite -> t("Favorite Comic", "Komik Favorit")
             else -> t("Featured Comic", "Komik Pilihan")
         }
-        val categoryLabel = when {
-            isRead -> t("CONTINUE READING", "TERAKHIR DIBACA")
-            comic.isFavorite -> t("FAVORITE", "FAVORIT")
-            else -> t("FEATURED", "UNGGULAN")
-        }
         Column(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 6.dp),
@@ -774,14 +746,13 @@ fun HeroComicCard(
             val progressText = t("Page $readPage / $totalPages", "Halaman $readPage / $totalPages")
             val progressFraction = if (comic.totalPages > 0) readPage.toFloat() / comic.totalPages.toFloat() else 0f
             val coverUri = remember(comic.coverUri) {
-                if (comic.coverUri.isNotBlank()) Uri.parse(comic.coverUri) else null
+                if (comic.coverUri.isNotBlank()) comic.coverUri.toUri() else null
             }
             ContinueHeroCard(
                 title = comic.title,
                 progressText = progressText,
                 progressFraction = progressFraction,
                 coverUri = coverUri,
-                categoryLabel = categoryLabel,
                 onClick = { onOpenComic(comic) },
             )
         }
@@ -796,7 +767,7 @@ private fun CompactHeroCard(comic: Comic, onClick: () -> Unit) {
     val fraction = if (comic.totalPages > 0) readPage.toFloat() / comic.totalPages.toFloat() else 0f
     val progressText = t("Page $readPage / $totalPages", "Halaman $readPage / $totalPages")
     val coverUri = remember(comic.coverUri) {
-        if (comic.coverUri.isNotBlank()) Uri.parse(comic.coverUri) else null
+        if (comic.coverUri.isNotBlank()) comic.coverUri.toUri() else null
     }
     Box(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
         ContinueHeroCard(
@@ -809,7 +780,6 @@ private fun CompactHeroCard(comic: Comic, onClick: () -> Unit) {
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ComicCard(
     comic: Comic,
@@ -819,13 +789,12 @@ fun ComicCard(
     viewModel: ComicViewModel,
     onDownloadComic: ((Comic) -> Unit)? = null,
     showClearHistory: Boolean = false,
-    onMenuVisibilityChange: (Boolean) -> Unit = {},
 ) {
     EnsureComicMetadata(comic, viewModel)
 
     val progressFraction = comicProgressFraction(comic)
     val coverShape = RoundedCornerShape(20.dp)
-    val coverModel = remember(comic.coverUri) { Uri.parse(comic.coverUri) }
+    val coverModel = remember(comic.coverUri) { comic.coverUri.toUri() }
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Box(
@@ -935,7 +904,6 @@ fun ComicCard(
                 viewModel = viewModel,
                 onDownloadComic = onDownloadComic,
                 showClearHistory = showClearHistory,
-                onMenuVisibilityChange = onMenuVisibilityChange,
             )
         }
     }
@@ -948,7 +916,6 @@ private fun ComicMoreButton(
     viewModel: ComicViewModel,
     onDownloadComic: ((Comic) -> Unit)?,
     showClearHistory: Boolean,
-    onMenuVisibilityChange: (Boolean) -> Unit,
 ) {
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
@@ -991,7 +958,6 @@ private fun ComicMoreButton(
         }
         if (showMenu) {
             ComicActionMenu(
-                expanded = true,
                 onDismiss = { showMenu = false },
                 onInfo = { showInfoDialog = true },
                 onDownload = onDownloadComic?.let { cb -> { cb(comic) } },
@@ -1005,7 +971,6 @@ private fun ComicMoreButton(
 
 @Composable
 private fun ComicActionMenu(
-    expanded: Boolean,
     onDismiss: () -> Unit,
     onInfo: () -> Unit,
     onDownload: (() -> Unit)?,
@@ -1013,7 +978,7 @@ private fun ComicActionMenu(
     onDelete: () -> Unit,
 ) {
     DropdownMenu(
-        expanded = expanded,
+        expanded = true,
         onDismissRequest = onDismiss,
         shape = RoundedCornerShape(24.dp),
         containerColor = DeckSurfaceVariant,
@@ -1076,7 +1041,6 @@ private fun CoverPlaceholder(modifier: Modifier = Modifier) {
 
 private enum class TagPillStyle { Clear, Selected, Unselected }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TagPill(text: String, count: Int?, style: TagPillStyle, onClick: () -> Unit) {
     val container = when (style) {
@@ -1118,7 +1082,7 @@ private fun TagPill(text: String, count: Int?, style: TagPillStyle, onClick: () 
 private fun ScanCompleteCard(addedCount: Int, onShow: () -> Unit, onDismiss: () -> Unit) {
     LaunchedEffect(addedCount) {
         if (addedCount > 0) {
-            delay(4000)
+            delay(4000.milliseconds)
             onDismiss()
         }
     }
@@ -1302,7 +1266,6 @@ private fun SortSidePanel(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ComicListItem(
     comic: Comic,
@@ -1312,13 +1275,12 @@ fun ComicListItem(
     viewModel: ComicViewModel,
     onDownloadComic: ((Comic) -> Unit)? = null,
     showClearHistory: Boolean = false,
-    onMenuVisibilityChange: (Boolean) -> Unit = {},
 ) {
     EnsureComicMetadata(comic, viewModel)
 
     val progressFraction = comicProgressFraction(comic)
     val pgs = t("pgs", "hlm")
-    val coverModel = remember(comic.coverUri) { Uri.parse(comic.coverUri) }
+    val coverModel = remember(comic.coverUri) { comic.coverUri.toUri() }
 
     Surface(
         shape = RoundedCornerShape(16.dp),
@@ -1420,7 +1382,6 @@ fun ComicListItem(
                     viewModel = viewModel,
                     onDownloadComic = onDownloadComic,
                     showClearHistory = showClearHistory,
-                    onMenuVisibilityChange = onMenuVisibilityChange,
                 )
             }
         }

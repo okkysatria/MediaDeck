@@ -7,7 +7,6 @@ import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.BaseDataSource
 import androidx.media3.datasource.DataSpec
-import org.codelibs.jcifs.smb.impl.SmbFile
 import org.codelibs.jcifs.smb.SmbRandomAccess
 import kotlinx.coroutines.*
 import java.io.IOException
@@ -21,14 +20,14 @@ class SmbDataSource(private val context: Context) : BaseDataSource(true) {
     private var opened = false
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val randomAccessLock = Any()
-    private val INITIAL_BUFFER_SIZE = 256 * 1024
-    private val STEADY_BUFFER_SIZE = 2 * 1024 * 1024
-    private var nextBufferSize = INITIAL_BUFFER_SIZE
-    private var currentBuffer = ByteArray(INITIAL_BUFFER_SIZE)
+    private val initialBufferSize = 256 * 1024
+    private val steadyBufferSize = 2 * 1024 * 1024
+    private var nextBufferSize = initialBufferSize
+    private var currentBuffer = ByteArray(initialBufferSize)
     private var currentBufferStart = -1L
     private var currentBufferLength = 0
     private var prefetchJob: Deferred<FetchResult?>? = null
-    data class FetchResult(val data: ByteArray, val length: Int, val startPos: Long)
+    private class FetchResult(val data: ByteArray, val length: Int, val startPos: Long)
     override fun open(dataSpec: DataSpec): Long {
         transferInitializing(dataSpec)
         uri = dataSpec.uri
@@ -51,7 +50,7 @@ class SmbDataSource(private val context: Context) : BaseDataSource(true) {
             }
             currentBufferStart = -1L
             currentBufferLength = 0
-            nextBufferSize = INITIAL_BUFFER_SIZE
+            nextBufferSize = initialBufferSize
             cancelPrefetch()
             opened = true
             transferStarted(dataSpec)
@@ -75,19 +74,19 @@ class SmbDataSource(private val context: Context) : BaseDataSource(true) {
                 prefetchJob = null
             } else {
                 cancelPrefetch()
-                val readSize = Math.min(nextBufferSize.toLong(), minOf(totalLength - currentPos, bytesRemaining)).toInt()
+            val readSize = minOf(nextBufferSize.toLong(), minOf(totalLength - currentPos, bytesRemaining)).toInt()
                 if (readSize <= 0) return C.RESULT_END_OF_INPUT
                 if (currentBuffer.size < readSize) currentBuffer = ByteArray(readSize)
                 val read = readSmbAt(raf, currentPos, currentBuffer, readSize)
                 if (read == -1) return C.RESULT_END_OF_INPUT
                 currentBufferStart = currentPos
                 currentBufferLength = read
-                nextBufferSize = STEADY_BUFFER_SIZE
+            nextBufferSize = steadyBufferSize
             }
         }
         val offsetInBuffer = (currentPos - currentBufferStart).toInt()
         val availableInBuffer = currentBufferLength - offsetInBuffer
-        val bytesToCopy = Math.min(length, availableInBuffer)
+        val bytesToCopy = minOf(length, availableInBuffer)
         System.arraycopy(currentBuffer, offsetInBuffer, targetBuffer, offset, bytesToCopy)
         readPosition += bytesToCopy
         if (prefetchJob == null && (offsetInBuffer + bytesToCopy) > currentBufferLength / 2) {

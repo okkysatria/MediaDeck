@@ -14,13 +14,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
@@ -37,7 +34,6 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -53,12 +49,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -86,6 +80,7 @@ import com.mediadeck.app.viewmodel.GalleryViewModel
 import com.mediadeck.app.viewmodel.MovieViewModel
 import com.mediadeck.app.viewmodel.ScannerViewModel
 import com.mediadeck.app.viewmodel.SettingsViewModel
+import androidx.media3.common.util.UnstableApi
 
 object Routes {
     const val COMICS = "comics"
@@ -101,7 +96,7 @@ object Routes {
 private val FULL_SCREEN_ROUTES = setOf(Routes.COMIC_READER, Routes.VIDEO_PLAYER, Routes.GALLERY_VIEWER)
 private val ROOT_TABS = listOf(Routes.COMICS, Routes.GALLERY, Routes.MOVIES, Routes.SETTINGS)
 
-@OptIn(kotlinx.coroutines.FlowPreview::class)
+@UnstableApi
 @Composable
 fun AppNavigationLayout(
     comicViewModel: ComicViewModel,

@@ -1,7 +1,7 @@
 package com.mediadeck.app.util.smb
 import android.content.Context
-import android.net.Uri
 import android.util.Log
+import androidx.core.net.toUri
 import com.mediadeck.app.data.comic.Comic
 import com.mediadeck.app.data.comic.ComicPage
 import com.mediadeck.app.data.gallery.GalleryItem
@@ -10,12 +10,13 @@ import com.mediadeck.app.data.settings.AppSettings
 import com.mediadeck.app.util.media.MediaUtils
 import com.mediadeck.app.util.scan.LocalScanner
 import com.mediadeck.app.util.scan.NaturalOrderComparator
-import org.codelibs.jcifs.smb.impl.SmbFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
+import org.codelibs.jcifs.smb.impl.SmbFile
+
 data class SmbFileItem(
     val name: String,
     val url: String,
@@ -141,7 +142,7 @@ object SmbScanner {
         try {
             val rootFile = SmbConnectionManager.getSmbFile(context, rootSmbUrl, settings)
             if (interruptibleSmbCall { rootFile.exists() && rootFile.isDirectory }) {
-                val uri = Uri.parse(rootSmbUrl)
+                val uri = rootSmbUrl.toUri()
                 val shareName = if (!rootUrl.isNullOrEmpty()) {
                     uri.pathSegments.lastOrNull()?.trim('/') ?: settings.smbShare
                 } else {
@@ -262,7 +263,7 @@ object SmbScanner {
             val isKnown = knownUris.any { it.removeSuffix("/") == folderUrlStrNorm }
             if (!isKnown) {
                 val parsed = LocalScanner.parseNameMetadata(parentFolderName, settings)
-                val firstImage = filteredImages.minWithOrNull(compareBy(NaturalOrderComparator) { it.name }) ?: (if (filteredImages.isNotEmpty()) filteredImages.first() else null)
+                val firstImage = filteredImages.minWithOrNull(compareBy(NaturalOrderComparator) { it.name }) ?: filteredImages.firstOrNull()
                 val cover = firstImage?.let { toContentProviderUri(it.url.toString()) } ?: ""
                 val comic = Comic(
                     title = parsed.title,
@@ -289,7 +290,7 @@ object SmbScanner {
                     launch {
                         batch.forEach { file ->
                             checkControl()
-                            val nextFolderName = Uri.parse(file.url.toString()).lastPathSegment?.trim('/') ?: file.name.trim('/')
+                            val nextFolderName = file.url.toString().toUri().lastPathSegment?.trim('/') ?: file.name.trim('/')
                             scanFileTreeAllSmb(context, file, nextFolderName, comics, gallery, movies, settings, onProgress, checkControl, knownUris, onItemsFound)
                         }
                     }
@@ -330,7 +331,7 @@ object SmbScanner {
             if (enoughImages && !isRootComicFolder) {
                 val isKnown = knownUris.any { it.removeSuffix("/") == folderUrlStrNorm }
                 if (!isKnown) {
-                    val rawName = Uri.parse(dir.url.toString()).lastPathSegment?.trim('/') ?: dir.name.trim('/')
+                    val rawName = dir.url.toString().toUri().lastPathSegment?.trim('/') ?: dir.name.trim('/')
                     val parsed = LocalScanner.parseNameMetadata(rawName, settings)
                     onProgress(parentFolderName)
                     val firstImage = filteredImages.minWithOrNull(compareBy(NaturalOrderComparator) { it.name }) ?: filteredImages.first()
@@ -354,7 +355,7 @@ object SmbScanner {
                         launch {
                             batch.forEach { file ->
                                 checkControl()
-                                val nextFolderName = Uri.parse(file.url.toString()).lastPathSegment?.trim('/') ?: file.name.trim('/')
+                                val nextFolderName = file.url.toString().toUri().lastPathSegment?.trim('/') ?: file.name.trim('/')
                                 findComicFoldersSmb(context, file, nextFolderName, comics, settings, onProgress, checkControl, knownUris, onItemsFound)
                             }
                         }
@@ -433,7 +434,7 @@ object SmbScanner {
                         launch {
                             batch.forEach { file ->
                                 checkControl()
-                                val nextFolderName = Uri.parse(file.url.toString()).lastPathSegment?.trim('/') ?: file.name.trim('/')
+                                val nextFolderName = file.url.toString().toUri().lastPathSegment?.trim('/') ?: file.name.trim('/')
                                 scanFileTreeForGallerySmb(context, file, nextFolderName, gallery, settings, onProgress, checkControl, knownUris, onItemsFound)
                             }
                         }
@@ -466,7 +467,7 @@ object SmbScanner {
                     .forEach { file ->
                         val fileUrl = file.url.toString()
                         val cpUri = toContentProviderUri(fileUrl)
-                        android.util.Log.d("SmbScanner", "Comic Page: $fileUrl -> $cpUri")
+                        Log.d("SmbScanner", "Comic Page: $fileUrl -> $cpUri")
                         pages.add(
                             ComicPage(
                                 comicId = 0,
@@ -540,7 +541,7 @@ object SmbScanner {
                         launch {
                             batch.forEach { file ->
                                 checkControl()
-                                val nextFolderName = Uri.parse(file.url.toString()).lastPathSegment?.trim('/') ?: file.name.trim('/')
+                                val nextFolderName = file.url.toString().toUri().lastPathSegment?.trim('/') ?: file.name.trim('/')
                                 scanFileTreeForMoviesSmb(context, file, nextFolderName, movies, settings, onProgress, checkControl, knownUris, onItemsFound)
                             }
                         }

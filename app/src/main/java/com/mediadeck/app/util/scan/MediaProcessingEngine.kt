@@ -1,22 +1,25 @@
 package com.mediadeck.app.util.scan
 import android.content.Context
 import android.media.MediaMetadataRetriever
-import android.net.Uri
 import android.util.Log
+import androidx.core.net.toUri
 import com.mediadeck.app.data.settings.AppSettings
 import com.mediadeck.app.util.media.VideoThumbnailHelper
 import com.mediadeck.app.util.media.MediaUtils
+import com.mediadeck.app.util.smb.SmbConnectionManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlin.time.Duration.Companion.milliseconds
 import java.util.concurrent.ConcurrentHashMap
 object MediaProcessingEngine {
     private const val MAX_PROCESS_ATTEMPTS = 3
@@ -92,11 +95,11 @@ object MediaProcessingEngine {
     }
     private fun launchFolderBatchConsumer(channel: Channel<FolderMediaBatchTask>, workerCount: Int) {
         engineScope.launch {
-            for (batch in channel) {
+            for ((folderKey, tasks) in channel) {
                 try {
-                    VideoThumbnailHelper.setFolderThumbnailProcessing(batch.folderKey, true)
+                    VideoThumbnailHelper.setFolderThumbnailProcessing(folderKey, true)
                     val taskChannel = Channel<ProcessingTask>(Channel.UNLIMITED)
-                    for (task in batch.tasks) taskChannel.send(task)
+                    for (task in tasks) taskChannel.send(task)
                     taskChannel.close()
                     coroutineScope {
                         repeat(workerCount) {
@@ -108,10 +111,10 @@ object MediaProcessingEngine {
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    Log.e("MediaProcessingEngine", "Folder media batch failed: ${batch.folderKey}", e)
+                    Log.e("MediaProcessingEngine", "Folder media batch failed: $folderKey", e)
                 } finally {
-                    activeFolderMediaBatchKeys.remove(batch.folderKey)
-                    VideoThumbnailHelper.setFolderThumbnailProcessing(batch.folderKey, false)
+                    activeFolderMediaBatchKeys.remove(folderKey)
+                    VideoThumbnailHelper.setFolderThumbnailProcessing(folderKey, false)
                 }
             }
         }
@@ -147,7 +150,7 @@ object MediaProcessingEngine {
                 return
             }
             if (taskKey in queuedNormalUris) enqueuePriority(task)
-            kotlinx.coroutines.delay(100L)
+            delay(100.milliseconds)
         }
     }
     data class ProcessingTask(
@@ -254,7 +257,7 @@ object MediaProcessingEngine {
                         return
                     }
                     attempt++
-                    kotlinx.coroutines.delay(RETRY_DELAY_MS * attempt)
+                    delay((RETRY_DELAY_MS * attempt).milliseconds)
                 }
             }
         } finally {
@@ -266,7 +269,7 @@ object MediaProcessingEngine {
     private fun isTransientIoFailure(error: Throwable): Boolean {
         var current: Throwable? = error
         while (current != null) {
-            if (current is java.io.IOException || current is java.net.SocketTimeoutException ||
+            if (current is java.io.IOException ||
                 current.javaClass.simpleName in setOf("SmbException", "TransportException")) return true
             current = current.cause
         }
@@ -281,11 +284,11 @@ object MediaProcessingEngine {
             var hasThumbnail = task.skipThumbnail && VideoThumbnailHelper.hasCachedThumbnail(task.context, task.mediaId, task.thumbnailVariant)
             try {
                 val isSmb = MediaUtils.isSmbUri(task.uri)
-                val isImage = com.mediadeck.app.util.media.MediaUtils.isImageMime(task.context.contentResolver.getType(Uri.parse(task.uri))) ||
-                               com.mediadeck.app.util.media.MediaUtils.isImageExt(com.mediadeck.app.util.media.MediaUtils.getFileExt(task.uri))
+                val isImage = MediaUtils.isImageMime(task.context.contentResolver.getType(task.uri.toUri())) ||
+                               MediaUtils.isImageExt(MediaUtils.getFileExt(task.uri))
                 if (isImage) {
                     if (!task.skipThumbnail) {
-                        val thumb = VideoThumbnailHelper.loadThumbnail(
+                        VideoThumbnailHelper.loadThumbnail(
                             context = task.context,
                             uriString = task.uri,
                             mediaId = task.mediaId,
@@ -325,27 +328,23 @@ object MediaProcessingEngine {
                     try {
                         if (isSmb) {
                             val smbFile = VideoThumbnailHelper.getSmbFileForUri(task.context, task.uri, task.settings)
-                            if (smbFile == null) throw java.io.IOException("SMB video URI tidak valid")
-                            if (smbFile != null) {
-                                val smbSource = VideoThumbnailHelper.SmbMediaDataSource(
-                                    smbFile,
-                                    com.mediadeck.app.util.smb.SmbConnectionManager.openRandomAccess(smbFile),
-                                )
-                                try {
-                                    retriever.setDataSource(smbSource)
-                                    val wStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
-                                    val hStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
-                                    val durStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-                                    width = wStr?.toIntOrNull() ?: 0
-                                    height = hStr?.toIntOrNull() ?: 0
-                                    duration = durStr?.toLongOrNull() ?: 0L
-                                    resolution = if (width > 0 && height > 0) "${width}x$height" else ""
-                                } finally {
-                                    smbSource.close()
-                                }
+                                ?: throw java.io.IOException("SMB video URI tidak valid")
+                            val smbSource = VideoThumbnailHelper.SmbMediaDataSource(
+                                smbFile,
+                                SmbConnectionManager.openRandomAccess(smbFile),
+                            )
+                            smbSource.use { source ->
+                                retriever.setDataSource(source)
+                                val wStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+                                val hStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+                                val durStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                                width = wStr?.toIntOrNull() ?: 0
+                                height = hStr?.toIntOrNull() ?: 0
+                                duration = durStr?.toLongOrNull() ?: 0L
+                                resolution = if (width > 0 && height > 0) "${width}x$height" else ""
                             }
                         } else {
-                            val uri = Uri.parse(task.uri)
+                            val uri = task.uri.toUri()
                             if (uri.scheme == "content") {
                                 val descriptor = task.context.contentResolver.openFileDescriptor(uri, "r")
                                     ?: throw java.io.IOException("Tidak dapat membuka video: $uri")
@@ -391,7 +390,7 @@ object MediaProcessingEngine {
                     ?: throw java.io.IOException("SMB video URI tidak valid")
                 VideoThumbnailHelper.SmbMediaDataSource(
                     smbFile,
-                    com.mediadeck.app.util.smb.SmbConnectionManager.openRandomAccess(smbFile),
+                    SmbConnectionManager.openRandomAccess(smbFile),
                 ).use { source ->
                     retriever.setDataSource(source)
                     val width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
@@ -400,7 +399,7 @@ object MediaProcessingEngine {
                     return duration to if (width > 0 && height > 0) "${width}x$height" else ""
                 }
             }
-            val uri = Uri.parse(task.uri)
+            val uri = task.uri.toUri()
             if (uri.scheme == "content") {
                 val descriptor = task.context.contentResolver.openFileDescriptor(uri, "r")
                     ?: throw java.io.IOException("Tidak dapat membuka video: $uri")
@@ -426,13 +425,13 @@ object MediaProcessingEngine {
         try {
             task.mediaItems.firstOrNull()?.third?.let { awaitFolderBatchTurn(it) }
             Log.d("MediaProcessingEngine", "Generating mosaic for folder: ${task.folderKey}")
-            for (item in task.mediaItems.take(4)) {
+            for ((uri, mediaId, thumbnailVariant) in task.mediaItems.take(4)) {
                 val bmp = VideoThumbnailHelper.loadThumbnail(
                     task.context,
-                    item.first,
-                    item.second,
+                    uri,
+                    mediaId,
                     task.settings,
-                    item.third,
+                    thumbnailVariant,
                 )
                 if (bmp != null) bitmaps.add(bmp)
             }
@@ -452,7 +451,7 @@ object MediaProcessingEngine {
     }
     private suspend fun awaitFolderBatchTurn(variant: String) {
         while (activeFolderMediaBatchKeys.any { it.startsWith("$variant|") }) {
-            kotlinx.coroutines.delay(50L)
+            delay(50.milliseconds)
         }
     }
     private fun saveFolderThumbnailToDisk(context: Context, bmp: android.graphics.Bitmap, folderKey: String) {

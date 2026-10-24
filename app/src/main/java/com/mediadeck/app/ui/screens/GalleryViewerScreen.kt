@@ -52,10 +52,8 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.PictureInPicture
 import androidx.compose.material.icons.filled.Save
@@ -86,6 +84,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -114,8 +113,9 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboard
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -148,7 +148,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 @androidx.media3.common.util.UnstableApi
-@OptIn(ExperimentalMaterial3Api::class, kotlinx.coroutines.FlowPreview::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GalleryViewerScreen(
     itemId: Long,
@@ -165,7 +165,8 @@ fun GalleryViewerScreen(
         }
     }
     val context = LocalContext.current
-    val screenHeightDp = LocalConfiguration.current.screenHeightDp
+    val containerHeight = LocalWindowInfo.current.containerSize.height
+    val screenHeightDp = with(LocalDensity.current) { containerHeight.toDp().value.toInt() }
     val compactViewer = screenHeightDp < 500
     val items by viewModel.filteredGalleryItems.collectAsState()
     val clipboard = LocalClipboard.current
@@ -280,14 +281,17 @@ fun GalleryViewerScreen(
             message = t("Are you sure you want to delete this file permanently?", "Apakah Anda yakin ingin menghapus file ini secara permanen?"),
         )
     }
+    val currentPageOffsetFraction by remember(pagerState) {
+        derivedStateOf { pagerState.currentPageOffsetFraction }
+    }
     Scaffold(
         containerColor = Color.Black,
         modifier = modifier
             .focusRequester(focusRequester)
             .focusable()
             .onKeyEvent { keyEvent ->
-                if (keyEvent.type == KeyEventType.KeyDown) {
-                    when (keyEvent.key) {
+                when (keyEvent.type) {
+                    KeyEventType.KeyDown -> when (keyEvent.key) {
                         Key.DirectionLeft -> {
                             if (currentIndex > 0) {
                                 coroutineScope.launch {
@@ -322,11 +326,10 @@ fun GalleryViewerScreen(
                         }
                         else -> false
                     }
-                } else false
+                    else -> false
+                }
             },
-    ) { innerPadding ->
-        @Suppress("UNUSED_VARIABLE")
-        val ignoredPadding = innerPadding
+    ) { _ ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -343,7 +346,7 @@ fun GalleryViewerScreen(
             ) { page ->
                 val pageItem = items.getOrNull(page)
                 if (pageItem != null) {
-                    val pageOffset = ((pagerState.currentPage - page) + pagerState.currentPageOffsetFraction)
+                    val pageOffset = (pagerState.currentPage - page) + currentPageOffsetFraction
                     val absOffset = kotlin.math.abs(pageOffset).coerceIn(0f, 1f)
                     val pageModifier = when (settings.galleryTransition) {
                         "fade" -> Modifier
@@ -512,17 +515,16 @@ fun GalleryViewerScreen(
                                 }
                                 IconButton(
                                     onClick = {
-                                        val target = currentItem
-                                        if (MediaUtils.isSmbUri(target.uri)) {
-                                            movieViewModel.downloadSmbFile(context, target.uri, target.name)
+                                        if (MediaUtils.isSmbUri(currentItem.uri)) {
+                                            movieViewModel.downloadSmbFile(context, currentItem.uri, currentItem.name)
                                         } else {
                                             val needsPermission = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
                                                     ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
                                             if (needsPermission) {
-                                                pendingDownload = target
+                                                pendingDownload = currentItem
                                                 storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
                                             } else {
-                                                performLocalDownload(target)
+                                                performLocalDownload(currentItem)
                                             }
                                         }
                                     },
@@ -608,11 +610,10 @@ fun GalleryViewerScreen(
                     .fillMaxWidth()
                     .align(Alignment.BottomCenter),
             ) {
-                val safeItem = currentItem
-                val sizeFormatted = remember(safeItem.size) { formatMediaSize(safeItem.size) }
-                val dateText = remember(safeItem.dateAdded) { formatMediaDate(safeItem.dateAdded) }
-                val tagList = remember(safeItem.tags) {
-                    safeItem.tags.split(",").map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+                val sizeFormatted = remember(currentItem.size) { formatMediaSize(currentItem.size) }
+                val dateText = remember(currentItem.dateAdded) { formatMediaDate(currentItem.dateAdded) }
+                val tagList = remember(currentItem.tags) {
+                    currentItem.tags.split(",").map { it.trim() }.filter { it.isNotEmpty() }.distinct()
                 }
                 val maxSheetHeight = (screenHeightDp * (if (compactViewer) 0.96f else 0.92f)).dp
                 Surface(
@@ -686,22 +687,22 @@ fun GalleryViewerScreen(
                                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                     GalleryDetailRow(
                                         t("File name", "Nama file"),
-                                        safeItem.name.substringBeforeLast('.', safeItem.name),
+                                        currentItem.name.substringBeforeLast('.', currentItem.name),
                                     )
-                                    GalleryDetailRow(t("Format", "Format"), safeItem.mimeType)
+                                    GalleryDetailRow(t("Format", "Format"), currentItem.mimeType)
                                     GalleryDetailRow(t("Size", "Ukuran"), sizeFormatted)
                                     GalleryDetailRow(
                                         t("Dimension", "Dimensi"),
-                                        if (safeItem.width > 0 && safeItem.height > 0) {
-                                            "${safeItem.width} × ${safeItem.height}"
+                                        if (currentItem.width > 0 && currentItem.height > 0) {
+                                            "${currentItem.width} × ${currentItem.height}"
                                         } else {
                                             t("Loading...", "Memuat...")
                                         },
                                     )
-                                    if (safeItem.mimeType.contains("video", true) && safeItem.duration > 0) {
+                                    if (currentItem.mimeType.contains("video", true) && currentItem.duration > 0) {
                                         GalleryDetailRow(
                                             t("Duration", "Durasi"),
-                                            com.mediadeck.app.util.media.MediaUtils.formatDuration(safeItem.duration),
+                                            MediaUtils.formatDuration(currentItem.duration),
                                         )
                                     }
                                     GalleryDetailRow(t("Added on", "Ditambahkan"), dateText)
@@ -711,7 +712,7 @@ fun GalleryViewerScreen(
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        text = safeItem.uri,
+                                        text = currentItem.uri,
                                         fontSize = 16.sp,
                                         maxLines = 1,
                                         overflow = TextOverflow.MiddleEllipsis,
@@ -721,7 +722,7 @@ fun GalleryViewerScreen(
                                     IconButton(
                                         onClick = {
                                             coroutineScope.launch {
-                                                clipboard.setClipEntry(androidx.compose.ui.platform.ClipEntry(android.content.ClipData.newPlainText("URL", safeItem.uri)))
+                                                clipboard.setClipEntry(androidx.compose.ui.platform.ClipEntry(android.content.ClipData.newPlainText("URL", currentItem.uri)))
                                             }
                                             Toast.makeText(context, toastCopied, Toast.LENGTH_SHORT).show()
                                         },
@@ -759,7 +760,7 @@ fun GalleryViewerScreen(
                             IconButton(
                                 onClick = {
                                     viewModel.updateGalleryItemDetails(
-                                        safeItem,
+                                        currentItem,
                                         newFolderName = albumNameInput,
                                         newTags = tagsInput,
                                     )
@@ -1020,16 +1021,14 @@ private fun VideoPlayerPage(
 
         val owner = context.findLifecycleOwner()
         var wasPlaying = false
-        val observer = object : LifecycleEventObserver {
-            override fun onStateChanged(source: androidx.lifecycle.LifecycleOwner, event: Lifecycle.Event) {
-                when (event) {
-                    Lifecycle.Event.ON_PAUSE -> {
-                        wasPlaying = exoPlayer.playWhenReady
-                        exoPlayer.pause()
-                    }
-                    Lifecycle.Event.ON_RESUME -> if (wasPlaying) exoPlayer.play()
-                    else -> Unit
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_PAUSE -> {
+                    wasPlaying = exoPlayer.playWhenReady
+                    exoPlayer.pause()
                 }
+                Lifecycle.Event.ON_RESUME -> if (wasPlaying) exoPlayer.play()
+                else -> Unit
             }
         }
         owner?.lifecycle?.addObserver(observer)

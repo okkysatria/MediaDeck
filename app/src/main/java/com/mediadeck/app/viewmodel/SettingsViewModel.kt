@@ -7,15 +7,10 @@ import com.mediadeck.app.data.AppRepository
 import com.mediadeck.app.util.smb.SmbCredentialStore
 import com.mediadeck.app.data.settings.AppSettings
 import com.mediadeck.app.util.i18n.translate
-import com.mediadeck.app.util.media.VideoThumbnailHelper
-import com.mediadeck.app.util.smb.SmbDiscoveryManager
 import com.mediadeck.app.util.smb.SmbFileItem
 import com.mediadeck.app.util.smb.SmbScanner
 import org.codelibs.jcifs.smb.impl.SmbAuthException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -26,16 +21,12 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import java.io.File
 import java.net.InetSocketAddress
 import java.net.Socket
-import java.util.concurrent.atomic.AtomicInteger
-import kotlin.time.Duration.Companion.seconds
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import com.mediadeck.app.service.MediaScannerService
-@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val repository: AppRepository,
@@ -47,10 +38,6 @@ class SettingsViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AppSettings())
     private val _isSmbOnline = MutableStateFlow(value = true)
     val isSmbOnline: StateFlow<Boolean> = _isSmbOnline.asStateFlow()
-    private val _isGeneratingThumbnails = MutableStateFlow(false)
-    val isGeneratingThumbnails: StateFlow<Boolean> = _isGeneratingThumbnails.asStateFlow()
-    private val _thumbnailProgress = MutableStateFlow("")
-    val thumbnailProgress: StateFlow<String> = _thumbnailProgress.asStateFlow()
     private val _currentBrowserPath = MutableStateFlow("")
     val currentBrowserPath = _currentBrowserPath.asStateFlow()
     private val _browserItems = MutableStateFlow<List<SmbFileItem>>(emptyList())
@@ -69,18 +56,12 @@ class SettingsViewModel @Inject constructor(
     val browseSubpathBySession = _browseSubpathBySession.asStateFlow()
     private val _selectedSettingsTabIndex = MutableStateFlow(0)
     val selectedSettingsTabIndex = _selectedSettingsTabIndex.asStateFlow()
-    private val _comicsThumbSize = MutableStateFlow(0L)
-    val comicsThumbSize = _comicsThumbSize.asStateFlow()
-    private val _galleryThumbSize = MutableStateFlow(0L)
-    val galleryThumbSize = _galleryThumbSize.asStateFlow()
     private val _isClearingCache = MutableStateFlow(false)
     val isClearingCache = _isClearingCache.asStateFlow()
     private val _isClearingData = MutableStateFlow(false)
     val isClearingData = _isClearingData.asStateFlow()
     private val _cacheClearCompleted = MutableStateFlow(0)
     val cacheClearCompleted = _cacheClearCompleted.asStateFlow()
-    private val _moviesThumbSize = MutableStateFlow(0L)
-    val moviesThumbSize = _moviesThumbSize.asStateFlow()
     private val _scrollToTopEvent = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val scrollToTopEvent = _scrollToTopEvent.asSharedFlow()
     private val _messageEvent = MutableSharedFlow<String>(extraBufferCapacity = 1)
@@ -394,80 +375,8 @@ class SettingsViewModel @Inject constructor(
             }
         }
     }
-    fun generateAllVideoThumbnails(context: Context) {
-        val appContext = context.applicationContext
-        if (_isGeneratingThumbnails.value) return
-        _isGeneratingThumbnails.value = true
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val moviesList = repository.getAllMoviesDirect()
-                val total = moviesList.size
-                if (total > 0) {
-                    val completedCount = AtomicInteger(0)
-                    val failedCount = AtomicInteger(0)
-                    val updateProgress = {
-                        val done = completedCount.get()
-                        val failed = failedCount.get()
-                        _thumbnailProgress.value = if (failed > 0) "$done/$total ($failed gagal)" else "$done/$total"
-                    }
-                    for (batch in moviesList.chunked(16)) {
-                        batch.map { movie ->
-                            async {
-                                try {
-                                    val cacheFile = File(
-                                        context.filesDir,
-                                        "thumbnails/${VideoThumbnailHelper.getCacheFilename(movie.id, "movie")}",
-                                    )
-                                    if (!cacheFile.isFile || cacheFile.length() <= 0L) {
-                                        VideoThumbnailHelper.loadThumbnail(appContext, movie.uri, movie.id, variant = "movie")
-                                    }
-                                    completedCount.incrementAndGet()
-                                } catch (e: Exception) {
-                                    Log.e("SettingsViewModel", "Thumbnail failed: ${movie.title}", e)
-                                    failedCount.incrementAndGet()
-                                } finally {
-                                    updateProgress()
-                                }
-                            }
-                        }.awaitAll()
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e("SettingsViewModel", "Thumbnail generation crashed", e)
-            } finally {
-                _isGeneratingThumbnails.value = false
-                _thumbnailProgress.value = ""
-            }
-        }
-    }
     fun setSelectedSettingsTabIndex(index: Int) {
         _selectedSettingsTabIndex.value = index
-    }
-    fun clearPermanentThumbnails(category: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val thumbFolder = File(context.filesDir, "thumbnails")
-                if (!thumbFolder.exists()) return@launch
-                val mediaIds = when (category) {
-                    "comics" -> repository.getAllComicsDirect().map { it.id }
-                    "gallery" -> repository.getAllGalleryItemsDirect().map { it.id }
-                    "movies" -> repository.getAllMoviesDirect().map { it.id }
-                    else -> emptyList()
-                }
-                mediaIds.forEach { mediaId ->
-                    if (mediaId > 0L) {
-                        val variant = when (category) { "gallery" -> "gallery"; "movies" -> "movie"; else -> "explore" }
-                        File(thumbFolder, VideoThumbnailHelper.getCacheFilename(mediaId, variant)).delete()
-                        File(thumbFolder, "vthumb_v1_$mediaId.jpg").delete()
-                        File(thumbFolder, "vthumb_v1_view_$mediaId.jpg").delete()
-                    }
-                }
-                VideoThumbnailHelper.clearMemoryCache()
-                refreshThumbnailsSize()
-            } catch (e: Exception) {
-                Log.e("SettingsViewModel", "Failed to clear thumbnails for $category", e)
-            }
-        }
     }
     fun clearAllCaches() {
         if (_isClearingCache.value) return
@@ -480,62 +389,11 @@ class SettingsViewModel @Inject constructor(
                     }
                 }
                 repository.clearAllThumbnails(context)
-                refreshThumbnailsSize()
             } catch (e: Exception) {
                 Log.e("SettingsViewModel", "Failed to clear caches", e)
             } finally {
                 _isClearingCache.value = false
                 _cacheClearCompleted.value += 1
-            }
-        }
-    }
-    fun refreshThumbnailsSize() {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val thumbFolder = File(context.filesDir, "thumbnails")
-                if (!thumbFolder.exists()) {
-                    _comicsThumbSize.value = 0L
-                    _galleryThumbSize.value = 0L
-                    _moviesThumbSize.value = 0L
-                    return@launch
-                }
-                val comicItems = repository.getAllComicsDirect()
-                val galleryItems = repository.getAllGalleryItemsDirect()
-                val movieItems = repository.getAllMoviesDirect()
-                val files = thumbFolder.listFiles() ?: emptyArray()
-                val fileMap = files.associateBy({ it.name }, { it.length() })
-                fun calcSizeForGallery(items: List<com.mediadeck.app.data.gallery.GalleryItem>): Long {
-                    var total = 0L
-                    items.forEach { item ->
-                        if (item.id > 0L) {
-                            total += fileMap[VideoThumbnailHelper.getCacheFilename(item.id, "gallery")] ?: 0L
-                        }
-                    }
-                    return total
-                }
-                fun calcSizeForMovies(items: List<com.mediadeck.app.data.movie.Movie>): Long {
-                    var total = 0L
-                    items.forEach { item ->
-                        if (item.id > 0L) {
-                            total += fileMap[VideoThumbnailHelper.getCacheFilename(item.id, "movie")] ?: 0L
-                        }
-                    }
-                    return total
-                }
-                fun calcSizeForComics(items: List<com.mediadeck.app.data.comic.Comic>): Long {
-                    var total = 0L
-                    items.forEach { item ->
-                        if (item.id > 0L) {
-                            total += fileMap[VideoThumbnailHelper.getCacheFilename(item.id)] ?: 0L
-                        }
-                    }
-                    return total
-                }
-                _comicsThumbSize.value = calcSizeForComics(comicItems)
-                _galleryThumbSize.value = calcSizeForGallery(galleryItems)
-                _moviesThumbSize.value = calcSizeForMovies(movieItems)
-            } catch (e: Exception) {
-                Log.e("SettingsViewModel", "Failed to refresh thumbnail sizes", e)
             }
         }
     }

@@ -1,30 +1,19 @@
 @file:OptIn(kotlinx.coroutines.FlowPreview::class)
 package com.mediadeck.app.ui.screens
 import androidx.activity.compose.BackHandler
-import coil3.request.crossfade
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.FilterAlt
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.History
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Shadow
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -34,15 +23,12 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -54,11 +40,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
@@ -79,12 +66,10 @@ import com.mediadeck.app.ui.theme.DeckOnAccent
 import com.mediadeck.app.util.i18n.t
 import com.mediadeck.app.viewmodel.MovieViewModel
 import com.mediadeck.app.viewmodel.ScannerViewModel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.withContext
 import kotlin.time.Duration.Companion.milliseconds
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MoviesScreen(
     viewModel: MovieViewModel,
@@ -154,6 +139,9 @@ fun MoviesScreen(
     val savedScrollOffset by viewModel.scrollOffset.collectAsState()
     val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = savedScrollIndex, initialFirstVisibleItemScrollOffset = savedScrollOffset)
     val folderGridState = rememberLazyGridState()
+    LaunchedEffect(viewModel.scrollToTopEvent, gridState) {
+        viewModel.scrollToTopEvent.collect { gridState.animateScrollToItem(0) }
+    }
     var folderShuffleSeed by remember { mutableIntStateOf(kotlin.random.Random.nextInt()) }
     BackHandler(enabled = isSearchingLocal || isTagsPanelExpanded || isMultiSelect || search.isNotEmpty() || selectedTags.isNotEmpty() || activeTab != "all" || selectedFolderName != null) {
         when {
@@ -316,7 +304,7 @@ fun MoviesScreen(
                                         onClick = { viewModel.clearMovieTagFilter() },
                                         shape = RoundedCornerShape(18.dp),
                                         color = com.mediadeck.app.ui.theme.DeckSurface,
-                                        border = androidx.compose.foundation.BorderStroke(1.dp, DeckDivider),
+                                        border = BorderStroke(1.dp, DeckDivider),
                                         modifier = Modifier.height(36.dp)
                                     ) {
                                         Row(
@@ -413,7 +401,8 @@ fun MoviesScreen(
                 } else {
                     val isTitleOnly = settings.layoutMode == "title_only"
                     val bottomBarPadding = rememberBottomBarPadding(16.dp)
-                    val screenWidthDp = LocalConfiguration.current.screenWidthDp
+                    val containerWidth = LocalWindowInfo.current.containerSize.width
+                    val screenWidthDp = with(LocalDensity.current) { containerWidth.toDp().value.toInt() }
                     val gridCells = when {
                         isTitleOnly -> GridCells.Fixed(1)
                         settings.gridColumns == 1 -> if (screenWidthDp >= 600) GridCells.Fixed(2) else GridCells.Fixed(1)
@@ -514,7 +503,7 @@ fun MoviesScreen(
                             ) {
                                 items(movies, key = { it.id }) { movie ->
                                     if (isTitleOnly) {
-                                        MovieListItem(movie, selectedIds.contains(movie.id), isMultiSelect, onOpenMovie, viewModel, settings, onDelete = { movieToDelete = it; showDeleteConfirmDialog = true })
+                                        MovieListItem(movie, isMultiSelect, onOpenMovie, viewModel, settings, onDelete = { movieToDelete = it; showDeleteConfirmDialog = true })
                                     } else {
                                         MovieCard(movie, selectedIds.contains(movie.id), isMultiSelect, onOpenMovie, viewModel, settings, onDelete = { movieToDelete = it; showDeleteConfirmDialog = true })
                                     }
@@ -661,7 +650,6 @@ fun MoviesScreen(
         }
     }
 }
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MovieCard(movie: Movie, isSelected: Boolean, isMultiSelect: Boolean, onOpenMovie: (Movie) -> Unit, viewModel: MovieViewModel, settings: com.mediadeck.app.data.settings.AppSettings, onDelete: (Movie) -> Unit) {
     val context = LocalContext.current
@@ -803,9 +791,8 @@ fun MovieCard(movie: Movie, isSelected: Boolean, isMultiSelect: Boolean, onOpenM
         }
     }
 }
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun MovieListItem(movie: Movie, isSelected: Boolean, isMultiSelect: Boolean, onOpenMovie: (Movie) -> Unit, viewModel: MovieViewModel, settings: com.mediadeck.app.data.settings.AppSettings, onDelete: (Movie) -> Unit) {
+fun MovieListItem(movie: Movie, isMultiSelect: Boolean, onOpenMovie: (Movie) -> Unit, viewModel: MovieViewModel, settings: com.mediadeck.app.data.settings.AppSettings, onDelete: (Movie) -> Unit) {
     val context = LocalContext.current
     val subtitle = listOfNotNull(
         movie.resolution.takeIf { it.isNotBlank() },

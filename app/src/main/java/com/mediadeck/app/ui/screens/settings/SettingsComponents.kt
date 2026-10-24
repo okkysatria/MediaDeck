@@ -48,10 +48,10 @@ fun SettingsAccent.color(): Color = when (this) {
 @Composable
 fun SettingsSectionHeader(
     title: String,
+    modifier: Modifier = Modifier,
     icon: ImageVector? = null,
     accent: SettingsAccent = SettingsAccent.Primary,
     subtitle: String? = null,
-    modifier: Modifier = Modifier,
 ) {
     if (subtitle != null) {
         val tint = if (accent == SettingsAccent.Error) DeckBadgeRed else DeckAccentBlue
@@ -94,7 +94,6 @@ fun SettingsSectionHeader(
 
 @Composable
 fun SettingsCard(
-    accent: SettingsAccent = SettingsAccent.Primary,
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -129,42 +128,13 @@ fun settingsSwitchColors(): SwitchColors = SwitchDefaults.colors(
 )
 
 @Composable
-fun SettingsLabelRow(
-    title: String,
-    subtitle: String? = null,
-    icon: ImageVector? = null,
-    accent: SettingsAccent = SettingsAccent.Primary,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .defaultMinSize(minHeight = 48.dp)
-            .padding(horizontal = 14.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        if (icon != null) {
-            Icon(icon, contentDescription = null, tint = DeckAccentBlue, modifier = Modifier.size(18.dp))
-        }
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = DeckTextPrimary)
-            if (subtitle != null) {
-                Text(subtitle, fontSize = 12.sp, color = DeckTextSecondary)
-            }
-        }
-    }
-}
-
-@Composable
 fun SettingsToggleRow(
     title: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
-    icon: ImageVector? = null,
-    accent: SettingsAccent = SettingsAccent.Primary,
-    testTag: String? = null,
     modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    testTag: String? = null,
 ) {
     Row(
         modifier = modifier
@@ -294,10 +264,9 @@ fun SettingsOptionRow(
 fun SettingsPickerRow(
     title: String,
     selectedLabel: String,
-    icon: ImageVector? = null,
-    accent: SettingsAccent = SettingsAccent.Primary,
-    modifier: Modifier = Modifier,
     options: List<PickerOption>,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
 ) {
     var expanded by remember { mutableStateOf(false) }
     Row(

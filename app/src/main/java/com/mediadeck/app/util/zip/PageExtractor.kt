@@ -16,11 +16,11 @@ class PageExtractor(
     private val cache: DiskLruCache,
     private val lock: CacheEntryLock
 ) {
-    private val TAG = "PageExtractor"
+    private val tag = "PageExtractor"
     suspend fun extractPage(zipPath: String, entryName: String): ExtractResult {
         val zipFile = File(zipPath)
         if (!zipFile.exists()) {
-            Log.w(TAG, "Source ZIP missing: $zipPath")
+            Log.w(tag, "Source ZIP missing: $zipPath")
             return ExtractResult.SourceMissing
         }
         val cacheKey = generateCacheKey(zipPath, entryName)
@@ -34,11 +34,11 @@ class PageExtractor(
                 if (it.exists() && it.length() > 0L) {
                     return@withLock ExtractResult.Success(it)
                 } else if (it.exists()) {
-                    Log.w(TAG, "Cache file corrupted (0 bytes), invalidating: $cacheKey")
+                    Log.w(tag, "Cache file corrupted (0 bytes), invalidating: $cacheKey")
                     cache.remove(cacheKey)
                 }
             }
-            Log.d(TAG, "Extracting page: $entryName from $zipPath")
+            Log.d(tag, "Extracting page: $entryName from $zipPath")
             try {
                 val reader = ZipEntryReader(zipFile)
                 val cachedFile = cache.put(cacheKey) { output ->
@@ -47,23 +47,23 @@ class PageExtractor(
                     }
                 }
                 if (cachedFile != null && cachedFile.exists() && cachedFile.length() > 0L) {
-                    Log.i(TAG, "Successfully extracted to cache: $cacheKey")
+                    Log.i(tag, "Successfully extracted to cache: $cacheKey")
                     ExtractResult.Success(cachedFile)
                 } else {
-                    Log.e(TAG, "Failed to write to cache for key: $cacheKey")
+                    Log.e(tag, "Failed to write to cache for key: $cacheKey")
                     ExtractResult.Error("Failed to save to cache")
                 }
-            } catch (e: ZipEntryNotFoundException) {
-                Log.e(TAG, "Entry not found in ZIP: $entryName")
+            } catch (_: ZipEntryNotFoundException) {
+                Log.e(tag, "Entry not found in ZIP: $entryName")
                 ExtractResult.NotFound
-            } catch (e: ZipCorruptedException) {
-                Log.e(TAG, "Zip corrupted: $zipPath")
+            } catch (_: ZipCorruptedException) {
+                Log.e(tag, "Zip corrupted: $zipPath")
                 ExtractResult.Corrupted
             } catch (e: IOException) {
-                Log.e(TAG, "IO Error extracting $entryName: ${e.message}")
+                Log.e(tag, "IO Error extracting $entryName: ${e.message}")
                 ExtractResult.Error(e.message ?: "Unknown IO error")
             } catch (e: Exception) {
-                Log.e(TAG, "Unexpected error extracting $entryName", e)
+                Log.e(tag, "Unexpected error extracting $entryName", e)
                 ExtractResult.Error(e.message ?: "Unknown error")
             }
         }
@@ -74,7 +74,7 @@ class PageExtractor(
             val md = MessageDigest.getInstance("SHA-256")
             val digest = md.digest(input.toByteArray(Charsets.UTF_8))
             digest.joinToString("") { "%02x".format(it) }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             "fallback_${input.hashCode()}"
         }
     }

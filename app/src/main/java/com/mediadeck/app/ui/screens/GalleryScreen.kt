@@ -21,7 +21,6 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -67,10 +66,11 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -89,6 +89,10 @@ import com.mediadeck.app.ui.components.MediaDeckHeader
 import com.mediadeck.app.ui.components.ScanStatusCard
 import com.mediadeck.app.ui.components.rememberBottomBarPadding
 import com.mediadeck.app.ui.theme.DeckBadgeRed
+import com.mediadeck.app.ui.theme.DeckAccentBlue
+import com.mediadeck.app.ui.theme.DeckSurface
+import com.mediadeck.app.ui.theme.DeckTextPrimary
+import com.mediadeck.app.ui.theme.DeckTextSecondary
 import com.mediadeck.app.util.i18n.t
 import com.mediadeck.app.util.media.MediaFolderIdentity
 import com.mediadeck.app.util.media.MediaUtils
@@ -187,7 +191,7 @@ internal fun saveToDownloads(context: Context, item: GalleryItem): Boolean {
                     values.clear()
                     values.put(MediaStore.Downloads.IS_PENDING, 0)
                     resolver.update(target, values, null, null)
-                } catch (e: Exception) {
+                } catch (_: Exception) {
 
                     runCatching { resolver.delete(target, null, null) }
                     return false
@@ -198,7 +202,7 @@ internal fun saveToDownloads(context: Context, item: GalleryItem): Boolean {
                 val target = uniqueFile(dir, displayName)
                 try {
                     target.outputStream().use { out -> stream.copyTo(out) }
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     runCatching { target.delete() }
                     return false
                 }
@@ -209,7 +213,7 @@ internal fun saveToDownloads(context: Context, item: GalleryItem): Boolean {
             }
         }
         true
-    } catch (e: Exception) {
+    } catch (_: Exception) {
         false
     }
 }
@@ -246,7 +250,7 @@ private fun buildFolderEntries(
     for ((key, list) in groups) {
         val first = list.first()
         val name = MediaFolderIdentity.displayName(
-            first.folderUri.orEmpty(), first.uri.orEmpty(), first.folderName.orEmpty()
+            first.folderUri, first.uri, first.folderName
         )
         names[key] = name
         nameCounts[name] = (nameCounts[name] ?: 0) + 1
@@ -259,13 +263,13 @@ private fun buildFolderEntries(
         var latest = Long.MIN_VALUE
         var earliest = Long.MAX_VALUE
         var total = 0L
-        for (media in list) {
-            if (media.dateAdded > latest) latest = media.dateAdded
-            if (media.dateAdded < earliest) earliest = media.dateAdded
-            total += media.size
+        for ((_, _, _, _, size, dateAdded, _, _, _, _, _, _, _, _) in list) {
+            if (dateAdded > latest) latest = dateAdded
+            if (dateAdded < earliest) earliest = dateAdded
+            total += size
         }
         val label = if ((nameCounts[name] ?: 0) > 1) {
-            val parent = MediaFolderIdentity.parentDisplayName(first.folderUri.orEmpty(), first.uri.orEmpty())
+            val parent = MediaFolderIdentity.parentDisplayName(first.folderUri, first.uri)
             if (parent != null) "$name ($parent)" else name
         } else name
         entries.add(
@@ -294,7 +298,7 @@ private fun buildFolderEntries(
 }
 
 
-@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GalleryScreen(
     viewModel: GalleryViewModel,
@@ -333,12 +337,12 @@ fun GalleryScreen(
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
     var isFavoriteFilterActive by rememberSaveable { mutableStateOf(false) }
     var itemToDelete by remember { mutableStateOf<GalleryItem?>(null) }
-    var shuffleSeed by rememberSaveable { mutableStateOf(Random.nextInt()) }
+    var shuffleSeed by rememberSaveable { mutableIntStateOf(Random.nextInt()) }
 
     val folderKeyCache = remember { HashMap<Long, Pair<Any?, String>>() }
     val folderEntries = remember(items, showFolders, sortOption, shuffleSeed) {
         if (!showFolders) {
-            emptyList<FolderEntry>()
+            emptyList()
         } else {
             buildFolderEntries(items, sortOption, shuffleSeed) { media ->
                 val cached = folderKeyCache[media.id]
@@ -362,9 +366,9 @@ fun GalleryScreen(
             null
         } else {
             MediaFolderIdentity.displayName(
-                firstItem.folderUri.orEmpty().ifEmpty { key },
-                firstItem.uri.orEmpty().ifEmpty { key },
-                firstItem.folderName.orEmpty(),
+                firstItem.folderUri.ifEmpty { key },
+                firstItem.uri.ifEmpty { key },
+                firstItem.folderName,
             )
         }
     }
@@ -410,8 +414,6 @@ fun GalleryScreen(
     val stableOnDownload: (GalleryItem) -> Unit = remember { { item -> latestOnDownload(item) } }
     val latestOnOpenItem by rememberUpdatedState(onOpenItem)
     val stableOnOpenItem: (Long) -> Unit = remember { { id -> latestOnOpenItem(id) } }
-    val onToggleSelection: (Long) -> Unit = remember(viewModel) { { id -> viewModel.toggleGallerySelection(id) } }
-    val onStartMultiSelect: (Long) -> Unit = remember(viewModel) { { id -> viewModel.startGalleryMultiSelect(id) } }
     val onRequestDelete: (GalleryItem) -> Unit = remember { { item -> itemToDelete = item } }
     val onFolderClick: (String) -> Unit = remember(viewModel) { { key -> viewModel.setSelectedGalleryFolderName(key) } }
 
@@ -471,10 +473,12 @@ fun GalleryScreen(
     }
 
 
+    val savedScrollIndex by viewModel.scrollIndex.collectAsState()
+    val savedScrollOffset by viewModel.scrollOffset.collectAsState()
     val gridState = key(selectedFolderName) {
         rememberLazyStaggeredGridState(
-            initialFirstVisibleItemIndex = if (selectedFolderName == null) viewModel.scrollIndex.value else 0,
-            initialFirstVisibleItemScrollOffset = if (selectedFolderName == null) viewModel.scrollOffset.value else 0,
+            initialFirstVisibleItemIndex = if (selectedFolderName == null) savedScrollIndex else 0,
+            initialFirstVisibleItemScrollOffset = if (selectedFolderName == null) savedScrollOffset else 0,
         )
     }
     LaunchedEffect(viewModel.scrollToTopEvent, gridState) {
@@ -667,7 +671,8 @@ fun GalleryScreen(
                     val isTitleOnly = settings.layoutMode == "title_only"
                     val isUniformGrid = settings.galleryGridType == "uniform"
                     val gridColumns = settings.gridColumns
-                    val screenWidthDp = LocalConfiguration.current.screenWidthDp
+                    val containerWidth = LocalWindowInfo.current.containerSize.width
+                    val screenWidthDp = with(LocalDensity.current) { containerWidth.toDp().value.toInt() }
 
 
                     val folderColumns = when {
@@ -729,28 +734,26 @@ fun GalleryScreen(
                                 items(items, key = { it.id }, contentType = { "media" }) { item ->
                                     val isSelected = selectedLookup.contains(item.id)
                                     if (isTitleOnly) {
-                                        GalleryListItemContent(
+                                        GalleryListItem(
                                             item = item,
                                             isSelected = isSelected,
                                             isMultiSelect = isMultiSelect,
-                                            settings = settings,
                                             onOpenItem = stableOnOpenItem,
-                                            onToggleSelection = onToggleSelection,
-                                            onStartMultiSelect = onStartMultiSelect,
+                                            viewModel = viewModel,
+                                            settings = settings,
                                             onDelete = onRequestDelete,
                                             onDownload = stableOnDownload,
                                             onFavorite = { viewModel.toggleGalleryFavorite(it) },
                                         )
                                     } else {
-                                        GalleryCardContent(
+                                        GalleryCard(
                                             item = item,
                                             isSelected = isSelected,
                                             isMultiSelect = isMultiSelect,
                                             uniformGrid = isUniformGrid,
-                                            settings = settings,
                                             onOpenItem = stableOnOpenItem,
-                                            onToggleSelection = onToggleSelection,
-                                            onStartMultiSelect = onStartMultiSelect,
+                                            viewModel = viewModel,
+                                            settings = settings,
                                             onDelete = onRequestDelete,
                                             onDownload = stableOnDownload,
                                             onFavorite = { viewModel.toggleGalleryFavorite(it) },
@@ -894,7 +897,6 @@ private fun ScanStatusSection(scannerViewModel: ScannerViewModel, floatingScanSt
 }
 
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TagFilterPanel(viewModel: GalleryViewModel) {
     val allTags by viewModel.availableTags.collectAsState()
@@ -941,50 +943,6 @@ private fun TagFilterPanel(viewModel: GalleryViewModel) {
 
 
 @Composable
-private fun GalleryHeader(
-    title: String,
-    subtitle: String,
-    showIcon: Boolean,
-    onBack: (() -> Unit)?,
-    onSearchClick: () -> Unit,
-    onMoreClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .windowInsetsPadding(WindowInsets.statusBars)
-            .padding(start = if (onBack != null) 8.dp else 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (onBack != null) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = t("Back", "Kembali"))
-            }
-            Spacer(Modifier.width(4.dp))
-        } else if (showIcon) {
-            Icon(
-                Icons.Outlined.Image,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(32.dp),
-            )
-            Spacer(Modifier.width(12.dp))
-        }
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, fontSize = 26.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(subtitle, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-        }
-        IconButton(onClick = onSearchClick) {
-            Icon(Icons.Default.Search, contentDescription = t("Search", "Cari"))
-        }
-        IconButton(onClick = onMoreClick) {
-            Icon(Icons.Default.MoreVert, contentDescription = t("More", "Lainnya"))
-        }
-    }
-}
-
-
-@Composable
 private fun TagChip(tag: String, countText: String, selected: Boolean, onClick: () -> Unit) {
     FilterChip(
         selected = selected,
@@ -1015,6 +973,20 @@ private fun TagChip(tag: String, countText: String, selected: Boolean, onClick: 
 @Composable
 private fun FolderMosaic(covers: List<GalleryItem>, settings: AppSettings, modifier: Modifier = Modifier) {
     val placeholder = MaterialTheme.colorScheme.surfaceContainerHighest
+    if (covers.isEmpty() || covers.none { it.hasThumbnail }) {
+        Box(
+            modifier = modifier.background(placeholder),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Folder,
+                contentDescription = null,
+                tint = DeckAccentBlue,
+                modifier = Modifier.size(40.dp),
+            )
+        }
+        return
+    }
     if (covers.size == 1) {
         val cover = covers.first()
         Box(modifier.background(placeholder)) {
@@ -1089,7 +1061,7 @@ private fun FolderCard(
                 CircularProgressIndicator(
                     modifier = Modifier.size(28.dp),
                     strokeWidth = 2.5.dp,
-                    color = com.mediadeck.app.ui.theme.DeckAccentBlue,
+                    color = DeckAccentBlue,
                 )
             }
         }
@@ -1186,7 +1158,6 @@ private fun FolderListRow(
 
 @Composable
 private fun ItemDropdown(
-    expanded: Boolean,
     onDismiss: () -> Unit,
     isFavorite: Boolean,
     onFavorite: (() -> Unit)?,
@@ -1194,10 +1165,10 @@ private fun ItemDropdown(
     onDelete: () -> Unit,
 ) {
     DropdownMenu(
-        expanded = expanded,
+        expanded = true,
         onDismissRequest = onDismiss,
         shape = RoundedCornerShape(16.dp),
-        containerColor = com.mediadeck.app.ui.theme.DeckSurface,
+        containerColor = DeckSurface,
     ) {
         if (onFavorite != null) {
             DropdownMenuItem(
@@ -1207,14 +1178,14 @@ private fun ItemDropdown(
                         else t("Add to Favorites", "Tambah ke Favorit"),
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Medium,
-                        color = com.mediadeck.app.ui.theme.DeckTextPrimary,
+                        color = DeckTextPrimary,
                     )
                 },
                 leadingIcon = {
                     Icon(
                         imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                         contentDescription = null,
-                        tint = if (isFavorite) com.mediadeck.app.ui.theme.DeckBadgeRed else com.mediadeck.app.ui.theme.DeckTextSecondary,
+                        tint = if (isFavorite) DeckBadgeRed else DeckTextSecondary,
                         modifier = Modifier.size(18.dp),
                     )
                 },
@@ -1223,14 +1194,14 @@ private fun ItemDropdown(
         }
         if (onDownload != null) {
             DropdownMenuItem(
-                text = { Text(t("Download", "Unduh"), fontSize = 14.sp, fontWeight = FontWeight.Medium, color = com.mediadeck.app.ui.theme.DeckTextPrimary) },
-                leadingIcon = { Icon(Icons.Default.Download, null, tint = com.mediadeck.app.ui.theme.DeckTextPrimary, modifier = Modifier.size(18.dp)) },
+                text = { Text(t("Download", "Unduh"), fontSize = 14.sp, fontWeight = FontWeight.Medium, color = DeckTextPrimary) },
+                leadingIcon = { Icon(Icons.Default.Download, null, tint = DeckTextPrimary, modifier = Modifier.size(18.dp)) },
                 onClick = { onDismiss(); onDownload() },
             )
         }
         DropdownMenuItem(
-            text = { Text(t("Delete", "Hapus"), fontSize = 14.sp, fontWeight = FontWeight.Medium, color = com.mediadeck.app.ui.theme.DeckBadgeRed) },
-            leadingIcon = { Icon(Icons.Outlined.Delete, null, tint = com.mediadeck.app.ui.theme.DeckBadgeRed, modifier = Modifier.size(18.dp)) },
+            text = { Text(t("Delete", "Hapus"), fontSize = 14.sp, fontWeight = FontWeight.Medium, color = DeckBadgeRed) },
+            leadingIcon = { Icon(Icons.Outlined.Delete, null, tint = DeckBadgeRed, modifier = Modifier.size(18.dp)) },
             onClick = { onDismiss(); onDelete() },
         )
     }
@@ -1271,7 +1242,6 @@ fun GalleryCard(
 }
 
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun GalleryCardContent(
     item: GalleryItem,
@@ -1399,7 +1369,6 @@ private fun GalleryCardContent(
                     }
                     if (showMenu) {
                         ItemDropdown(
-                            expanded = true,
                             onDismiss = { showMenu = false },
                             isFavorite = item.isFavorite,
                             onFavorite = onFavorite?.let { cb -> { cb(item) } },
@@ -1452,7 +1421,6 @@ fun GalleryListItem(
     )
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun GalleryListItemContent(
     item: GalleryItem,
@@ -1541,7 +1509,6 @@ private fun GalleryListItemContent(
                 }
                 if (showMenu) {
                     ItemDropdown(
-                        expanded = true,
                         onDismiss = { showMenu = false },
                         isFavorite = item.isFavorite,
                         onFavorite = onFavorite?.let { cb -> { cb(item) } },
@@ -1680,15 +1647,15 @@ fun SheetActionRow(
     icon: ImageVector,
     label: String,
     onClick: () -> Unit,
-    tint: Color = com.mediadeck.app.ui.theme.DeckAccentBlue,
-    labelColor: Color = com.mediadeck.app.ui.theme.DeckTextPrimary,
+    tint: Color = DeckAccentBlue,
+    labelColor: Color = DeckTextPrimary,
     trailing: (@Composable () -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(com.mediadeck.app.ui.theme.DeckSurface)
+            .background(DeckSurface)
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp)
             .height(52.dp),

@@ -1,7 +1,7 @@
 package com.mediadeck.app.viewmodel
 import android.content.Context
 import android.media.MediaScannerConnection
-import android.net.Uri
+import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -12,12 +12,15 @@ import com.mediadeck.app.data.movie.Movie
 import com.mediadeck.app.data.settings.AppSettings
 import com.mediadeck.app.data.settings.ScannedFolder
 import com.mediadeck.app.util.i18n.translate
+import com.mediadeck.app.util.media.MediaFolderIdentity
+import com.mediadeck.app.util.media.MediaUtils
 import com.mediadeck.app.util.scan.LocalScanner
 import com.mediadeck.app.util.scan.MediaProcessingEngine
 import com.mediadeck.app.util.scan.ScannerStateManager
 import com.mediadeck.app.util.smb.SmbDiscoveryManager
 import com.mediadeck.app.util.smb.SmbScanner
 import com.mediadeck.app.util.media.VideoThumbnailHelper
+import com.mediadeck.app.service.MediaScannerService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
@@ -25,10 +28,10 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import kotlin.time.Duration.Companion.milliseconds
 @HiltViewModel
-@OptIn(kotlinx.coroutines.FlowPreview::class)
 class ScannerViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val repository: AppRepository,
@@ -44,8 +47,6 @@ class ScannerViewModel @Inject constructor(
     private val _comicCount = MutableStateFlow(0)
     private val _galleryCount = MutableStateFlow(0)
     private val _movieCount = MutableStateFlow(0)
-    private val _skippedOfflineSmbFolders = MutableStateFlow(0)
-    val skippedOfflineSmbFolders: StateFlow<Int> = _skippedOfflineSmbFolders.asStateFlow()
     private val _isScanPaused = MutableStateFlow(value = false)
     val isScanPaused: StateFlow<Boolean> = _isScanPaused.asStateFlow()
     private val _isScanActive = MutableStateFlow(value = false)
@@ -69,7 +70,7 @@ class ScannerViewModel @Inject constructor(
         if (now - lastProgressUpdateTime >= 250L) {
             lastProgressUpdateTime = now
             val cleanName = pathOrName.trimEnd('/', '\\').substringAfterLast('/').ifBlank { pathOrName }
-            _scanProgress.value = com.mediadeck.app.util.i18n.translate(
+            _scanProgress.value = translate(
                 lang,
                 "Scanning $cleanName",
                 "Memindai $cleanName",
@@ -87,19 +88,15 @@ class ScannerViewModel @Inject constructor(
         var lastNotificationTime = 0L
         viewModelScope.launch {
             _scanProgress.collect { progress ->
-                ScannerStateManager.updateProgress(progress)
                 if (_isScanActive.value && progress != null) {
                     val now = System.currentTimeMillis()
                     if (now - lastNotificationTime >= 1000L) {
                         lastNotificationTime = now
-                        com.mediadeck.app.service.MediaScannerService.startService(appContext, progress)
+                        MediaScannerService.startService(appContext, progress)
                     }
                 }
             }
         }
-        _isScanActive.onEach { ScannerStateManager.setScanActive(it) }.launchIn(viewModelScope)
-        _isScanPaused.onEach { ScannerStateManager.setScanPaused(it) }.launchIn(viewModelScope)
-        _isManualRefreshing.onEach { ScannerStateManager.setManualRefreshing(it) }.launchIn(viewModelScope)
     }
     fun startNetworkDiscovery(context: Context) {
         SmbDiscoveryManager.startDiscovery(context)
@@ -130,7 +127,7 @@ class ScannerViewModel @Inject constructor(
                 hideFromGallery = nextSettings.hideScannedFromGallery
                 nextSettings
             }
-            if (hideFromGallery && !com.mediadeck.app.util.media.MediaUtils.isSmbUri(normalizedUri)) {
+            if (hideFromGallery && !MediaUtils.isSmbUri(normalizedUri)) {
                 applyGalleryHidingToSingleFolder(context, normalizedUri, true)
             }
         }
@@ -139,7 +136,7 @@ class ScannerViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 if (uriStr.startsWith("content://")) {
-                    val treeUri = Uri.parse(uriStr)
+                    val treeUri = uriStr.toUri()
                     val rootDoc = DocumentFile.fromTreeUri(context, treeUri)
                     if (rootDoc != null && rootDoc.isDirectory) {
                         val nomedia = rootDoc.findFile(".nomedia")
@@ -147,7 +144,7 @@ class ScannerViewModel @Inject constructor(
                         else if (!hide && nomedia != null) nomedia.delete()
                     }
                 } else {
-                    val path = Uri.parse(uriStr).path ?: return@launch
+                    val path = uriStr.toUri().path ?: return@launch
                     val folder = File(path)
                     if (folder.exists() && folder.isDirectory) {
                         val nomedia = File(folder, ".nomedia")
@@ -163,7 +160,7 @@ class ScannerViewModel @Inject constructor(
         viewModelScope.launch {
             val normalizedUri = uri.removeSuffix("/")
             val hideFromGallery = repository.getSettingsDirect().hideScannedFromGallery
-            if (hideFromGallery && !com.mediadeck.app.util.media.MediaUtils.isSmbUri(normalizedUri)) {
+            if (hideFromGallery && !MediaUtils.isSmbUri(normalizedUri)) {
                 applyGalleryHidingToSingleFolder(context, normalizedUri, false)
             }
             repository.updateSettings { settings ->
@@ -186,7 +183,6 @@ class ScannerViewModel @Inject constructor(
         val target = "AUTO_ALL_$scanType"
         if (isManualRefresh) {
             _isManualRefreshing.value = true
-            ScannerStateManager.setManualRefreshing(true)
         }
         viewModelScope.launch {
             activeScanJob?.cancelAndJoin()
@@ -199,15 +195,14 @@ class ScannerViewModel @Inject constructor(
                     val lang = settings.language
                     if (!isManualRefresh && !settings.autoScanOnStart) {
                         _isManualRefreshing.value = false
-                        ScannerStateManager.setManualRefreshing(false)
                         return@withLock
                     }
                     _isScanActive.value = true
                     resetCounters()
-                    _scanProgress.value = com.mediadeck.app.util.i18n.translate(lang, "Starting scan...", "Memulai pemindaian...")
-                    val updatedFolderCache = java.util.concurrent.ConcurrentHashMap<String, Long>()
-                    val foldersModified = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
-                    val failedFolders = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+                    _scanProgress.value = translate(lang, "Starting scan...", "Memulai pemindaian...")
+                    val updatedFolderCache = ConcurrentHashMap<String, Long>()
+                    val foldersModified = ConcurrentHashMap.newKeySet<String>()
+                    val failedFolders = ConcurrentHashMap.newKeySet<String>()
                     val targetFolders = when (scanType) {
                         "comics" -> settings.comicFolders
                         "gallery" -> settings.galleryFolders
@@ -226,7 +221,7 @@ class ScannerViewModel @Inject constructor(
                             "No folders added for $sectionName. Go to Settings -> Scan to add folders.",
                             "Belum ada folder untuk $sectionName. Ke Pengaturan -> Pindai untuk tambah folder."
                         )
-                        delay(2500)
+                        delay(2500.milliseconds)
                         _isScanActive.value = false
                         _isManualRefreshing.value = false
                         _currentScanTarget.value = null
@@ -257,7 +252,7 @@ class ScannerViewModel @Inject constructor(
                                 else -> ""
                             }.split(",").filter { it.isNotEmpty() }
                             if (folders.isEmpty()) continue
-                            val (smbFolders, localFolders) = folders.partition { com.mediadeck.app.util.media.MediaUtils.isSmbUri(it) }
+                            val (smbFolders, localFolders) = folders.partition { MediaUtils.isSmbUri(it) }
                             suspend fun scanFoldersInternal(folderList: List<String>) {
                                 coroutineScope {
                                     folderList.map { uri ->
@@ -267,7 +262,7 @@ class ScannerViewModel @Inject constructor(
                                                 val knownUris = (allExistingMovies.keys + allExistingComics.keys + allExistingGallery.keys)
                                                     .map { it.removeSuffix("/") }.toSet()
                                                 val checkControl: suspend () -> Unit = { checkScanControl(lang) }
-                                                if (com.mediadeck.app.util.media.MediaUtils.isSmbUri(uri)) {
+                                                if (MediaUtils.isSmbUri(uri)) {
                                                     SmbScanner.scanSmbDirectory(
                                                         context = appContext,
                                                         settings = settings,
@@ -328,8 +323,8 @@ class ScannerViewModel @Inject constructor(
                             }
                         }
                         val allFolders = withContext(Dispatchers.IO) {
-                            (repository.getAllMoviesDirect().map { com.mediadeck.app.util.media.MediaFolderIdentity.key(it.folderUri, it.uri) } +
-                                    repository.getAllGalleryItemsDirect().map { com.mediadeck.app.util.media.MediaFolderIdentity.key(it.folderUri, it.uri) }).distinct()
+                            (repository.getAllMoviesDirect().map { MediaFolderIdentity.key(it.folderUri, it.uri) } +
+                                    repository.getAllGalleryItemsDirect().map { MediaFolderIdentity.key(it.folderUri, it.uri) }).distinct()
                         }
                         viewModelScope.launch(Dispatchers.IO) {
                             triggerFolderMosaics(allFolders, settings)
@@ -353,20 +348,18 @@ class ScannerViewModel @Inject constructor(
                         } else {
                             translate(lang, "Scan Completed (0 items found). Check folder content/permissions.", "Scan Selesai (0 item ditemukan). Periksa isi folder/izin.")
                         }
-                        delay(2500)
+                        delay(2500.milliseconds)
                     } catch (e: Exception) {
                         if (e is CancellationException) throw e
                         android.util.Log.e("ScannerViewModel", "Scan job failed", e)
                         _scanProgress.value = translate(lang, "Scan failed. Check SMB connection and folder access.", "Scan gagal. Periksa koneksi SMB dan akses folder.")
-                        delay(2500)
+                        delay(2500.milliseconds)
                     } finally {
                         _isScanActive.value = false
                         _isManualRefreshing.value = false
                         _currentScanTarget.value = null
                         _scanProgress.value = null
-                        ScannerStateManager.setScanActive(false)
-                        ScannerStateManager.setManualRefreshing(false)
-                        com.mediadeck.app.service.MediaScannerService.stopService(appContext)
+                                    MediaScannerService.stopService(appContext)
                     }
                 }
             }
@@ -376,12 +369,11 @@ class ScannerViewModel @Inject constructor(
         _comicCount.value = 0
         _galleryCount.value = 0
         _movieCount.value = 0
-        _skippedOfflineSmbFolders.value = 0
     }
     private class ScanDedupeTracker {
-        private val seenComics = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
-        private val seenGallery = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
-        private val seenMovies = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+        private val seenComics = ConcurrentHashMap.newKeySet<String>()
+        private val seenGallery = ConcurrentHashMap.newKeySet<String>()
+        private val seenMovies = ConcurrentHashMap.newKeySet<String>()
         fun dedupe(triple: Triple<List<Comic>, List<GalleryItem>, List<Movie>>): Triple<List<Comic>, List<GalleryItem>, List<Movie>> {
             return Triple(
                 triple.first.filter { seenComics.add(it.folderUri.removeSuffix("/")) },
@@ -391,7 +383,7 @@ class ScannerViewModel @Inject constructor(
         }
     }
     private fun isSmbMediaUri(uri: String): Boolean =
-        com.mediadeck.app.util.media.MediaUtils.isSmbUri(uri)
+        MediaUtils.isSmbUri(uri)
     private suspend fun processScanResultsInternal(
         context: Context,
         results: Triple<List<Comic>, List<GalleryItem>, List<Movie>>,
@@ -404,7 +396,6 @@ class ScannerViewModel @Inject constructor(
     ) {
         val lang = settings.language
         if (results.second.isNotEmpty()) {
-            val cat = com.mediadeck.app.util.i18n.translate(lang, "Gallery", "Galeri")
             val toInsert = mutableListOf<GalleryItem>()
             val contentKeyToItem = existingGallery.values.associateBy { "${it.name.lowercase().trim()}|${it.size}" }
             results.second.forEach { scanned ->
@@ -415,7 +406,7 @@ class ScannerViewModel @Inject constructor(
                     if (!settings.skipDuplicateScan || isSmbMediaUri(scanned.uri) || contentKeyToItem[key] == null) {
                         toInsert.add(scanned)
                         _galleryCount.update { it + 1 }
-                        foldersModified?.add(com.mediadeck.app.util.media.MediaFolderIdentity.key(scanned.folderUri, scanned.uri))
+                        foldersModified?.add(MediaFolderIdentity.key(scanned.folderUri, scanned.uri))
                     }
                 } else {
                     _galleryCount.update { it + 1 }
@@ -436,14 +427,13 @@ class ScannerViewModel @Inject constructor(
             }
         }
         if (results.first.isNotEmpty()) {
-            val cat = com.mediadeck.app.util.i18n.translate(lang, "Comic", "Komik")
             val toInsert = mutableListOf<Comic>()
             val galleryToRemoveIds = mutableListOf<Long>()
             val contentKeyToComic = existingComics.values.associateBy { "${it.title.lowercase().trim()}|${it.parentFolderName.lowercase().trim()}" }
             results.first.forEach { scanned ->
                 checkScanControl(lang)
                 val normUri = scanned.folderUri.removeSuffix("/")
-                val folderUriPrefix = if (com.mediadeck.app.util.media.MediaUtils.isSmbUri(scanned.folderUri)) {
+                val folderUriPrefix = if (MediaUtils.isSmbUri(scanned.folderUri)) {
                     val cp = SmbScanner.toContentProviderUri(normUri)
                     if (cp.endsWith("/")) cp else "$cp/"
                 } else {
@@ -480,7 +470,6 @@ class ScannerViewModel @Inject constructor(
             }
         }
         if (results.third.isNotEmpty()) {
-            val cat = com.mediadeck.app.util.i18n.translate(lang, "Movie", "Film")
             val toInsert = mutableListOf<Movie>()
             val contentKeyToItem = existingMovies.values.associateBy { "${it.title.lowercase().trim()}|${it.size}" }
             results.third.forEach { scanned ->
@@ -491,7 +480,7 @@ class ScannerViewModel @Inject constructor(
                     if (!settings.skipDuplicateScan || isSmbMediaUri(scanned.uri) || contentKeyToItem[key] == null) {
                         toInsert.add(scanned)
                         _movieCount.update { it + 1 }
-                        foldersModified?.add(com.mediadeck.app.util.media.MediaFolderIdentity.key(scanned.folderUri, scanned.uri))
+                        foldersModified?.add(MediaFolderIdentity.key(scanned.folderUri, scanned.uri))
                     }
                 } else {
                     _movieCount.update { it + 1 }
@@ -522,20 +511,17 @@ class ScannerViewModel @Inject constructor(
         _isManualRefreshing.value = false
         _currentScanTarget.value = null
         _scanProgress.value = null
-        ScannerStateManager.setScanActive(false)
-        ScannerStateManager.setScanPaused(false)
-        ScannerStateManager.setManualRefreshing(false)
-        com.mediadeck.app.service.MediaScannerService.stopService(appContext)
+        MediaScannerService.stopService(appContext)
     }
     fun applyGalleryHiding(context: Context, hide: Boolean) {
         viewModelScope.launch(Dispatchers.IO) {
             val settings = repository.getSettingsDirect()
             val allFolders = (settings.comicFolders.split(",") + settings.galleryFolders.split(",") + settings.movieFolders.split(","))
-                .filter { it.isNotEmpty() && !com.mediadeck.app.util.media.MediaUtils.isSmbUri(it) }.distinct()
+                .filter { it.isNotEmpty() && !MediaUtils.isSmbUri(it) }.distinct()
             allFolders.forEach { uriStr ->
                 try {
                     if (uriStr.startsWith("content://")) {
-                        val rootDoc = DocumentFile.fromTreeUri(context, Uri.parse(uriStr))
+                        val rootDoc = DocumentFile.fromTreeUri(context, uriStr.toUri())
                         if (rootDoc != null && rootDoc.isDirectory) {
                             val nomedia = rootDoc.findFile(".nomedia")
                             if (hide && nomedia == null) rootDoc.createFile("application/octet-stream", ".nomedia")
@@ -551,8 +537,8 @@ class ScannerViewModel @Inject constructor(
             val movies = repository.getAllMoviesDirect()
             val gallery = repository.getAllGalleryItemsDirect()
             val comics = repository.getAllComicsDirect()
-            val moviesByFolder = movies.groupBy { com.mediadeck.app.util.media.MediaFolderIdentity.key(it.folderUri, it.uri) }
-            val galleryByFolder = gallery.groupBy { com.mediadeck.app.util.media.MediaFolderIdentity.key(it.folderUri, it.uri) }
+            val moviesByFolder = movies.groupBy { MediaFolderIdentity.key(it.folderUri, it.uri) }
+            val galleryByFolder = gallery.groupBy { MediaFolderIdentity.key(it.folderUri, it.uri) }
             val comicsByFolder = comics.groupBy { it.folderUri.trimEnd('/') }
             folderKeys.distinct().forEach { folderKey ->
                 val cacheFilename = VideoThumbnailHelper.getFolderCacheFilename(folderKey)
@@ -576,7 +562,7 @@ class ScannerViewModel @Inject constructor(
         if (isScanCancelled || isForceStopped) throw CancellationException("Scan stopped by user.")
         while (_isScanPaused.value || ScannerStateManager.isMediaActive.value) {
             if (isScanCancelled || isForceStopped) throw CancellationException("Scan stopped by user.")
-            _scanProgress.value = if (ScannerStateManager.isMediaActive.value) com.mediadeck.app.util.i18n.translate(lang, "Scan Paused (User Busy)", "Scan Dijeda (Sedang Dipakai)") else com.mediadeck.app.util.i18n.translate(lang, "Scan Paused", "Scan Dijeda")
+            _scanProgress.value = if (ScannerStateManager.isMediaActive.value) translate(lang, "Scan Paused (User Busy)", "Scan Dijeda (Sedang Dipakai)") else translate(lang, "Scan Paused", "Scan Dijeda")
             delay(200.milliseconds)
         }
     }
@@ -594,9 +580,9 @@ class ScannerViewModel @Inject constructor(
                     _currentScanTarget.value = folderUriStr
                     _isScanActive.value = true
                     resetCounters()
-                    val foldersModified = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
-                    val updatedFolderCache = java.util.concurrent.ConcurrentHashMap<String, Long>()
-                    _scanProgress.value = com.mediadeck.app.util.i18n.translate(lang, "Starting scan...", "Memulai pemindaian...")
+                    val foldersModified = ConcurrentHashMap.newKeySet<String>()
+                    val updatedFolderCache = ConcurrentHashMap<String, Long>()
+                    _scanProgress.value = translate(lang, "Starting scan...", "Memulai pemindaian...")
                     try {
                         val (allExistingGallery, allExistingMovies, allExistingComics) = withContext(Dispatchers.IO) { Triple(repository.getAllGalleryItemsDirect().associateBy { it.uri }.toMutableMap(), repository.getAllMoviesDirect().associateBy { it.uri }.toMutableMap(), repository.getAllComicsDirect().associateBy { it.folderUri.removeSuffix("/") }.toMutableMap()) }
                         val galleryByFolder = allExistingGallery.values.groupBy {
@@ -607,7 +593,7 @@ class ScannerViewModel @Inject constructor(
                         val checkControl: suspend () -> Unit = { checkScanControl(lang) }
                         val knownUris = (allExistingMovies.keys + allExistingComics.keys + allExistingGallery.keys)
                             .map { it.removeSuffix("/") }.toSet()
-                        if (com.mediadeck.app.util.media.MediaUtils.isSmbUri(folderUriStr)) {
+                        if (MediaUtils.isSmbUri(folderUriStr)) {
                             SmbScanner.scanSmbDirectory(
                                 context = appContext,
                                 settings = settings,
@@ -641,19 +627,19 @@ class ScannerViewModel @Inject constructor(
                             (repository.getAllMoviesDirect().filter {
                                 val uP = if (it.uri.endsWith("/")) it.uri else "${it.uri}/"
                                 uP.startsWith(safePrefix)
-                            }.map { com.mediadeck.app.util.media.MediaFolderIdentity.key(it.folderUri, it.uri) } +
+                            }.map { MediaFolderIdentity.key(it.folderUri, it.uri) } +
                                     repository.getAllGalleryItemsDirect().filter {
                                         val uP = if (it.uri.endsWith("/")) it.uri else "${it.uri}/"
                                         uP.startsWith(safePrefix)
-                                    }.map { com.mediadeck.app.util.media.MediaFolderIdentity.key(it.folderUri, it.uri) }).distinct()
+                                    }.map { MediaFolderIdentity.key(it.folderUri, it.uri) }).distinct()
                         }
                         currentFolders.forEach { folderKey ->
                             val cacheFilename = VideoThumbnailHelper.getFolderCacheFilename(folderKey)
                             val file = File(appContext.filesDir, "thumbnails/$cacheFilename")
                             if (!file.exists() || file.length() == 0L || foldersModified.contains(folderKey)) {
                                 viewModelScope.launch(Dispatchers.IO) {
-                                    val movies = repository.getAllMoviesDirect().filter { com.mediadeck.app.util.media.MediaFolderIdentity.key(it.folderUri, it.uri) == folderKey }
-                                    val gallery = repository.getAllGalleryItemsDirect().filter { com.mediadeck.app.util.media.MediaFolderIdentity.key(it.folderUri, it.uri) == folderKey }
+                                    val movies = repository.getAllMoviesDirect().filter { MediaFolderIdentity.key(it.folderUri, it.uri) == folderKey }
+                                    val gallery = repository.getAllGalleryItemsDirect().filter { MediaFolderIdentity.key(it.folderUri, it.uri) == folderKey }
                                     val items = (movies.map { Triple(it.uri, it.id, "movie") } + gallery.map { Triple(it.uri, it.id, "gallery") }).take(4)
                                     if (items.isNotEmpty()) {
                                         MediaProcessingEngine.enqueueFolderMosaic(
@@ -676,20 +662,18 @@ class ScannerViewModel @Inject constructor(
                         } else {
                             translate(lang, "Scan Completed (0 items found). Check folder content/permissions.", "Scan Selesai (0 item ditemukan). Periksa isi folder/izin.")
                         }
-                        delay(2500)
+                        delay(2500.milliseconds)
                     } catch (e: Exception) {
                         if (e is CancellationException) throw e
                         android.util.Log.e("ScannerViewModel", "Scan job failed", e)
                         _scanProgress.value = translate(lang, "Scan failed. Check SMB connection and folder access.", "Scan gagal. Periksa koneksi SMB dan akses folder.")
-                        delay(2500)
+                        delay(2500.milliseconds)
                     } finally {
                         _isScanActive.value = false
                         _isManualRefreshing.value = false
                         _currentScanTarget.value = null
                         _scanProgress.value = null
-                        ScannerStateManager.setScanActive(false)
-                        ScannerStateManager.setManualRefreshing(false)
-                        com.mediadeck.app.service.MediaScannerService.stopService(appContext)
+                        MediaScannerService.stopService(appContext)
                     }
                 }
             }

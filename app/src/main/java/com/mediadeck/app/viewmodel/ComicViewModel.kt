@@ -76,7 +76,7 @@ class ComicViewModel @Inject constructor(
         } else {
             items
         }
-    }.debounce(300L)
+    }.debounce(300.milliseconds)
     val filteredComics: StateFlow<List<Comic>> = combine(
         offlineFilteredComics,
         combine(
@@ -135,7 +135,7 @@ class ComicViewModel @Inject constructor(
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val comicTagCounts: StateFlow<Map<String, Int>> = repository.allComics
-        .debounce(500L)
+        .debounce(500.milliseconds)
         .map { items ->
             val counts = mutableMapOf<String, Int>()
             items.forEach { item ->
@@ -154,11 +154,8 @@ class ComicViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
     val appSettings: StateFlow<AppSettings> = repository.appSettings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AppSettings())
-    val totalComicsCount: StateFlow<Int> = offlineFilteredComics
-        .map { it.size }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
     val comicAvailableTags: StateFlow<List<String>> = repository.allComics
-        .debounce(500L)
+        .debounce(500.milliseconds)
         .map { items ->
             items.asSequence()
                 .flatMap { it.tags.split(",") }
@@ -460,12 +457,12 @@ class ComicViewModel @Inject constructor(
     fun updateReadingProgress(pageNumber: Int, scrollOffset: Int = 0) {
         val current = _activeComic.value ?: return
         val totalPages = current.totalPages
-        val justCompleted = totalPages > 0 && pageNumber >= totalPages
+        val justCompleted = totalPages in 1..pageNumber
         val updated = current.copy(
             currentPage = pageNumber.coerceIn(1, totalPages.takeIf { it > 0 } ?: Int.MAX_VALUE),
             scrollOffset = scrollOffset,
             lastReadTime = System.currentTimeMillis(),
-            isCompleted = if (justCompleted) true else current.isCompleted,
+            isCompleted = justCompleted || current.isCompleted,
         )
         _activeComic.value = updated
         _readingProgressFlow.tryEmit(updated)

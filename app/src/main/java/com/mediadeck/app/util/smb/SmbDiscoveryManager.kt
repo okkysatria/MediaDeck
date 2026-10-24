@@ -11,6 +11,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -30,9 +31,6 @@ object SmbDiscoveryManager {
             launch { startMdnsDiscovery(context) }
             launch { startIpRangeScan() }
         }
-    }
-    fun stopDiscovery() {
-        discoveryJob?.cancel()
     }
     private suspend fun startMdnsDiscovery(context: Context) {
         val nsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
@@ -70,7 +68,7 @@ object SmbDiscoveryManager {
         }
         try {
             nsdManager.discoverServices("_smb._tcp.", NsdManager.PROTOCOL_DNS_SD, listener)
-            delay(15000)
+            delay(15.seconds)
         } catch (_: Exception) {
         } finally {
             try {

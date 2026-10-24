@@ -4,4 +4,6 @@
     <exclude domain="database" path="comic_reader_database-shm"/>
     <exclude domain="database" path="comic_reader_database-wal"/>
     <exclude domain="root" path="cache/"/>
+    <exclude domain="sharedpref" path="smb_credentials.xml"/>
+    <exclude domain="sharedpref" path="smb_credentials_secure.xml"/>
 </full-backup-content>

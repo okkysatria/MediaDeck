@@ -1,10 +1,9 @@
 package com.mediadeck.app.ui.screens
-import android.net.Uri
+import androidx.core.net.toUri
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -20,9 +19,6 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -38,7 +34,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -67,7 +62,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -77,7 +71,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
@@ -141,6 +134,7 @@ import kotlin.math.sin
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
 private val ReaderAccent = Color(0xFF4DA3FF)
 private val ReaderBar = Color(0xFF23262E)
@@ -152,10 +146,7 @@ private val ReaderMuted = Color(0xFFA0A5AF)
 private val ReaderDanger = Color(0xFFFF6B7A)
 
 
-private const val DEFAULT_PAGE_HEIGHT_PX = 1200
-
 private const val PROGRESS_SAVE_DELAY_MS = 250L
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ComicReaderScreen(
     viewModel: ComicViewModel,
@@ -256,7 +247,7 @@ fun ComicReaderScreen(
 
     LaunchedEffect(resetProgressRequested, jumpToPage) {
         if (resetProgressRequested && jumpToPage == null) {
-            delay(400)
+            delay(400.milliseconds)
             activeComic?.let { viewModel.clearComicHistory(it) }
             resetProgressRequested = false
         }
@@ -553,7 +544,7 @@ fun ComicReaderScreen(
                         if (labelMode == "index") {
                             "p.${pagePosition + 1}"
                         } else {
-                            val rawName = (Uri.parse(page.pageUri).lastPathSegment ?: page.pageUri).substringAfterLast('/')
+                            val rawName = (page.pageUri.toUri().lastPathSegment ?: page.pageUri).substringAfterLast('/')
                             val cleanName = rawName.substringBeforeLast('.')
                             if (cleanName.isNotBlank() && cleanName.length <= 15) cleanName else "p.${pagePosition + 1}"
                         }
@@ -576,7 +567,7 @@ fun ComicReaderScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         AsyncImage(
-                            model = Uri.parse(page.pageUri),
+                            model = page.pageUri.toUri(),
                             contentDescription = null,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
@@ -750,7 +741,7 @@ fun VerticalReader(
         if (!isInitialPositionRestored) return@LaunchedEffect
         snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
             .collectLatest { (index, offset) ->
-                delay(PROGRESS_SAVE_DELAY_MS)
+                delay(PROGRESS_SAVE_DELAY_MS.milliseconds)
                 val current = latestPages
                 if (index < current.size) latestOnProgressUpdate(current[index].pageIndex, offset)
             }
@@ -823,7 +814,7 @@ fun VerticalReader(
                     var retryCount by remember(page.pageUri) { mutableIntStateOf(0) }
                     val imageRequest = remember(page.pageUri, retryCount, context) {
                         ImageRequest.Builder(context)
-                            .data(Uri.parse(page.pageUri))
+                            .data(page.pageUri.toUri())
                             .memoryCacheKey("${page.pageUri}_retry_$retryCount")
                             .diskCacheKey("${page.pageUri}_retry_$retryCount")
                             .crossfade(false)
@@ -1012,7 +1003,6 @@ fun HorizontalSingleReader(
         val pageWidthPx = with(density) { pageWidth.toPx() }.coerceAtLeast(1f)
         val currentPageWidthPx by rememberUpdatedState(pageWidthPx)
         val currentPageIndex by rememberUpdatedState(pageIndex)
-        val currentTurnFromIndex by rememberUpdatedState(turnFromIndex)
         val currentLastIndex by rememberUpdatedState(pages.lastIndex)
 
         Box(
@@ -1159,7 +1149,6 @@ fun HorizontalSingleReader(
                             SinglePageCurlSurface(
                                 frontPage = if (isBackwardTurn) targetPage else shownPage,
                                 backPage = if (isBackwardTurn) shownPage else targetPage,
-                                direction = 1,
                                 progress = curlProgress,
                                 modifier = Modifier.fillMaxSize(),
                             )
@@ -1194,7 +1183,7 @@ private fun CurlComicPage(
                 ) { scale, offset ->
                     AsyncImage(
                         model = ImageRequest.Builder(LocalContext.current)
-                            .data(Uri.parse(page.pageUri))
+                            .data(page.pageUri.toUri())
                             .crossfade(false)
                             .build(),
                         contentDescription = null,
@@ -1226,7 +1215,7 @@ private fun PreloadComicPages(pages: List<ComicPage>, pageSlots: IntRange) {
         pageUris.forEach { pageUri ->
             imageLoader.enqueue(
                 ImageRequest.Builder(context)
-                    .data(Uri.parse(pageUri))
+                    .data(pageUri.toUri())
                     .crossfade(false)
                     .build(),
             )
@@ -1240,7 +1229,7 @@ private fun rememberCurlPagePainter(page: ComicPage?): Painter? {
     val context = LocalContext.current
     val request = remember(page.pageUri, context) {
         ImageRequest.Builder(context)
-            .data(Uri.parse(page.pageUri))
+            .data(page.pageUri.toUri())
             .crossfade(false)
             .build()
     }
@@ -1256,7 +1245,7 @@ private fun rememberPageMeasurePainter(page: ComicPage?): Painter? {
     val context = LocalContext.current
     val request = remember(page.pageUri, context) {
         ImageRequest.Builder(context)
-            .data(Uri.parse(page.pageUri))
+            .data(page.pageUri.toUri())
             .size(512, 512)
             .crossfade(false)
             .build()
@@ -1270,12 +1259,11 @@ private fun rememberPageMeasurePainter(page: ComicPage?): Painter? {
 private fun SinglePageCurlSurface(
     frontPage: ComicPage?,
     backPage: ComicPage?,
-    direction: Int,
     progress: () -> Float,
     modifier: Modifier = Modifier,
 ) {
-    val frontAlignment = if (direction > 0) Alignment.CenterStart else Alignment.CenterEnd
-    val backAlignment = if (direction > 0) Alignment.CenterEnd else Alignment.CenterStart
+    val frontAlignment = Alignment.CenterStart
+    val backAlignment = Alignment.CenterEnd
     val frontPainter = rememberCurlPagePainter(frontPage)
     val backPainter = rememberCurlPagePainter(backPage)
     Canvas(modifier) {
@@ -1301,8 +1289,8 @@ private fun SinglePageCurlSurface(
         val frontBounds = fittedBounds(frontPainter, frontAlignment)
         val backBounds = fittedBounds(backPainter, backAlignment)
         val sweepWidth = 0.34f
-        var edgeX = if (direction > 0) 0f else pageWidth
-        val movementSign = if (direction > 0) 1f else -1f
+        var edgeX = 0f
+        val movementSign = 1f
         repeat(stripCount) { index ->
             val u = (index + 0.5f) / stripCount
             val sweepStart = (1f - u) * (1f - sweepWidth)
@@ -1317,10 +1305,8 @@ private fun SinglePageCurlSurface(
             val centerX = (edgeX + nextEdgeX) / 2f
             val projectedWidth = abs(projectedOffset).coerceAtLeast(0.01f)
             val sourceU = when {
-                direction > 0 && isBackSide -> 1f - u
-                direction > 0 -> u
-                isBackSide -> u
-                else -> 1f - u
+                isBackSide -> 1f - u
+                else -> u
             }
             val sourceCenterX = sourceBounds.left + sourceU * sourceBounds.width
             val sourceLeft = (sourceCenterX - sourceStripWidth / 2f)
@@ -1371,7 +1357,6 @@ private fun DoublePageCurlSurface(
         val spreadWidth = size.width
         val pageWidth = spreadWidth / 2f
         val pageHeight = size.height
-        val hingeX = pageWidth
         val stripCount = 32
         fun fittedBounds(painter: Painter?, alignment: Alignment): Rect {
             val intrinsic = painter?.intrinsicSize
@@ -1391,7 +1376,7 @@ private fun DoublePageCurlSurface(
         val frontBounds = fittedBounds(frontPainter, frontAlignment)
         val backBounds = fittedBounds(backPainter, backAlignment)
         val sweepWidth = 0.34f
-        var edgeX = hingeX
+        var edgeX = pageWidth
         val movementSign = if (direction > 0) 1f else -1f
         repeat(stripCount) { index ->
             val u = (index + 0.5f) / stripCount
@@ -1889,7 +1874,7 @@ private fun leftPageSlotForSpread(spreadIndex: Int, isRtl: Boolean = false): Int
 private fun rightPageSlotForSpread(spreadIndex: Int, isRtl: Boolean = false): Int =
     if (spreadIndex == 0) 0 else if (isRtl) spreadIndex * 2 - 1 else spreadIndex * 2
 private fun pageFileName(page: ComicPage): String =
-    (Uri.parse(page.pageUri).lastPathSegment ?: page.pageUri)
+    (page.pageUri.toUri().lastPathSegment ?: page.pageUri)
         .substringAfterLast('/')
         .lowercase()
 private fun naturalCompare(a: String, b: String): Int {

@@ -174,21 +174,20 @@ object LocalScanner {
         val files = children.filter { !it.mimeType.equals(other = DocumentsContract.Document.MIME_TYPE_DIR, ignoreCase = true) }
         val dirs = children.filter { it.mimeType.equals(other = DocumentsContract.Document.MIME_TYPE_DIR, ignoreCase = true) }
         val folderFoundItems = mutableListOf<GalleryItem>()
-        for (file in files) {
-            if (file.name.startsWith("._")) continue
-            if (knownUris.contains(file.uriStr)) continue
+        for ((uriStr, _, name, mimeType, lastModified, size) in files) {
+            if (name.startsWith("._")) continue
+            if (knownUris.contains(uriStr)) continue
             checkControl()
-            val name = file.name
             onProgress?.invoke(name)
-            val mime = file.mimeType
+            val mime = mimeType
             if (MediaUtils.isImageMime(mime) || MediaUtils.isImageExt(MediaUtils.getFileExt(name))) {
                 val parsed = parseNameMetadata(name, settings)
                 val item = GalleryItem(
-                    uri = file.uriStr,
+                    uri = uriStr,
                     name = parsed.title,
                     mimeType = MediaUtils.getMimeTypeFromExt(MediaUtils.getFileExt(name)),
-                    size = file.size,
-                    dateAdded = file.lastModified,
+                    size = size,
+                    dateAdded = lastModified,
                     folderName = parentFolderName,
                     folderUri = folderUriStr,
                     tags = parsed.tags.joinToString(","),
@@ -252,20 +251,19 @@ object LocalScanner {
         val files = children.filter { !it.mimeType.equals(other = DocumentsContract.Document.MIME_TYPE_DIR, ignoreCase = true) }
         val dirs = children.filter { it.mimeType.equals(other = DocumentsContract.Document.MIME_TYPE_DIR, ignoreCase = true) }
         val folderFoundItems = mutableListOf<Movie>()
-        for (file in files) {
-            if (file.name.startsWith("._")) continue
-            if (knownUris.contains(file.uriStr)) continue
+        for ((uriStr, _, name, mimeType, lastModified, size) in files) {
+            if (name.startsWith("._")) continue
+            if (knownUris.contains(uriStr)) continue
             checkControl()
-            val name = file.name
             onProgress?.invoke(name)
-            val mime = file.mimeType
+            val mime = mimeType
             if (MediaUtils.isVideoFile(name, mime)) {
                 val parsed = parseNameMetadata(name, settings)
                 val movie = Movie(
                     title = parsed.title,
-                    uri = file.uriStr,
-                    size = file.size,
-                    dateAdded = file.lastModified,
+                    uri = uriStr,
+                    size = size,
+                    dateAdded = lastModified,
                     folderName = parentFolderName,
                     folderUri = folderUriStr,
                     tags = parsed.tags.joinToString(","),
@@ -771,7 +769,7 @@ object LocalScanner {
         val format = settings.scanFormat
         fun extractIdAndClean(text: String): Pair<String, String> {
             val trimmed = text.trim()
-            val matchResult = Regex("^(\\d+)[\\s_\\.\\-]*").find(trimmed)
+            val matchResult = Regex("^(\\d+)[\\s_.-]*").find(trimmed)
             if (matchResult != null) {
                 val id = matchResult.groups[1]?.value ?: ""
                 val cleanTitle = trimmed.substring(matchResult.value.length).trim()
@@ -932,13 +930,13 @@ object LocalScanner {
                     )
                 } else null
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             null
         }
     }
     suspend fun loadComicPages(context: Context, folderUriStr: String): List<ComicPage> = withContext(Dispatchers.IO) {
         val pages = mutableListOf<ComicPage>()
-        val uri = Uri.parse(folderUriStr)
+        val uri = folderUriStr.toUri()
         if (folderUriStr.startsWith("content://")) {
             try {
                 val treeUriStr = folderUriStr.substringBefore("/document/")

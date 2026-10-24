@@ -65,7 +65,8 @@ The SMB client is the CodeLibs `jcifs` artifact; this project does not depend on
 ## Requirements
 
 - Android Studio with Android SDK 37 installed
-- JDK 17 or newer
+- JDK 25 for the Gradle daemon (the checked-in Gradle JVM criteria selects version 25)
+- Java 17 bytecode target (configured in the Android module)
 - Minimum Android version: Android 7.0 (API 24)
 - Target Android version: API 37
 - Gradle Wrapper: 9.7.1
@@ -93,11 +94,11 @@ Run instrumented tests on a connected device or emulator:
 ./gradlew :app:connectedDebugAndroidTest
 ```
 
-The debug APK is written to `app/build/outputs/apk/debug/MediaDeck.apk`.
+The standard debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`. The project's `copyDebugApkAsMediaDeck` task also copies it to `app/build/outputs/apk/MediaDeck/MediaDeck.apk`.
 
 ## Release Signing
 
-Release builds require a private upload keystore. The signing configuration reads `KEYSTORE_PATH`, `STORE_PASSWORD`, and `KEY_PASSWORD` from the environment. The key alias is `upload`. Keep the keystore and passwords private; do not commit them to the repository.
+Release builds require a private upload keystore. Set `STORE_PASSWORD` and `KEY_PASSWORD` in the environment before building. `KEYSTORE_PATH` is optional; when omitted, Gradle looks for `my-upload-key.jks` in the project root. The key alias is `upload`. Keep the keystore and passwords private; do not commit them to the repository. Local signing key files are ignored by Git.
 
 ```bash
 ./gradlew :app:assembleRelease

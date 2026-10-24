@@ -26,7 +26,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -35,17 +34,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
@@ -57,13 +52,10 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -80,7 +72,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -108,7 +99,6 @@ import coil3.request.crossfade
 import com.mediadeck.app.data.settings.AppSettings
 import androidx.compose.ui.graphics.luminance
 import com.mediadeck.app.ui.theme.DeckAccentBlue
-import com.mediadeck.app.ui.theme.DeckBadgeRed
 import com.mediadeck.app.ui.theme.DeckDivider
 import com.mediadeck.app.ui.theme.DeckSurface
 import com.mediadeck.app.ui.theme.DeckSurfaceVariant
@@ -126,7 +116,6 @@ import kotlinx.coroutines.launch
 
 private val FolderPlaceholderBrush = Brush.linearGradient(listOf(Color(0xFF2C3037), Color(0xFF1F222A)))
 private val HeroPlaceholderBrush = Brush.linearGradient(listOf(Color(0xFF4A5A8F), Color(0xFF9A6AB0)))
-private val HeroScrimBrush = Brush.verticalGradient(listOf(Color.Transparent, Color(0xD9131417)), startY = 60f)
 private val SoftWhiteText = Color(0xFFD6DAE2)
 private val NotProcessing: Flow<Boolean> = MutableStateFlow(false)
 
@@ -201,14 +190,6 @@ private fun rememberThumbnailSource(
     }
 }
 
-@Composable
-fun rememberThumbnailUri(
-    mediaId: Long,
-    hasThumbnail: Boolean,
-    generationVersion: Long,
-    variant: String = "explore",
-): Uri? = rememberThumbnailSource(mediaId, hasThumbnail, generationVersion, variant)?.uri
-
 @Suppress("UNUSED_PARAMETER")
 @Composable
 fun AsyncThumbnailImage(
@@ -216,9 +197,9 @@ fun AsyncThumbnailImage(
     mediaId: Long,
     hasThumbnail: Boolean,
     settings: AppSettings,
+    modifier: Modifier = Modifier,
     thumbnailVariant: String = "explore",
     showProcessingIndicator: Boolean = false,
-    modifier: Modifier = Modifier.fillMaxSize(),
     contentScale: ContentScale = ContentScale.Crop,
     onSuccess: ((coil3.compose.AsyncImagePainter.State.Success) -> Unit)? = null
 ) {
@@ -767,8 +748,7 @@ fun ScanStatusCard(
     isScanPaused: Boolean,
     onTogglePause: () -> Unit,
     onStopScan: () -> Unit,
-    onOpenDetail: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     if (scanProgress == null) return
     val lang = LocalLanguage.current
@@ -783,7 +763,7 @@ fun ScanStatusCard(
     }
     val detail = location ?: ScanProgressFormatter.compact(scanProgress)
     val displayText = if (!isScanActive) {
-        if (detail.isNotBlank()) detail else statusText
+        detail.ifBlank { statusText }
     } else if (detail.isNotBlank() && !detail.equals(statusText, ignoreCase = true)) {
         "$statusText • $detail"
     } else {
@@ -798,7 +778,6 @@ fun ScanStatusCard(
             .padding(horizontal = 16.dp, vertical = 4.dp)
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
-            .clickable(enabled = onOpenDetail != null) { onOpenDetail?.invoke() }
     ) {
         Column {
             Row(
@@ -832,20 +811,6 @@ fun ScanStatusCard(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
-
-                if (onOpenDetail != null) {
-                    IconButton(
-                        onClick = onOpenDetail,
-                        modifier = Modifier.size(28.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                            contentDescription = t("Detail", "Detail"),
-                            tint = DeckTextSecondary,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
-                }
 
                 if (isScanActive) {
                     IconButton(
@@ -886,222 +851,6 @@ fun ScanStatusCard(
         }
     }
 }
-
-@Composable
-private fun ScanStat(value: String, label: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(value, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = DeckTextPrimary)
-        Text(label, fontSize = 12.sp, color = DeckTextSecondary)
-    }
-}
-
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ScanDetailBottomSheet(
-    scanProgress: String?,
-    isScanActive: Boolean,
-    isScanPaused: Boolean,
-    onTogglePause: () -> Unit,
-    onStopScan: () -> Unit,
-    onDismiss: () -> Unit,
-    foundCount: Int? = null,
-    newCount: Int? = null,
-    skippedCount: Int? = null,
-    progressFraction: Float? = null,
-    categoryLabel: String? = null,
-) {
-    val lang = LocalLanguage.current
-    fun t(en: String, id: String) = translate(lang, en, id)
-    val location = remember(scanProgress) {
-        scanProgress?.let { ScanProgressFormatter.location(it) }.orEmpty()
-    }
-    val isRunning = isScanActive && !isScanPaused
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = DeckSurface,
-        dragHandle = {
-            Box(
-                modifier = Modifier
-                    .padding(vertical = 10.dp)
-                    .width(40.dp)
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(DeckTextSecondary.copy(alpha = 0.4f))
-            )
-        }
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .navigationBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    if (isRunning) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            strokeWidth = 3.dp,
-                            color = DeckAccentBlue
-                        )
-                    } else {
-                        Icon(
-                            imageVector = if (isScanActive) Icons.Default.Pause else Icons.Default.CheckCircle,
-                            contentDescription = null,
-                            tint = DeckAccentBlue,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                    Text(
-                        text = t("Library Scan", "Pemindaian Pustaka"),
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = DeckTextPrimary
-                    )
-                }
-                IconButton(onClick = onDismiss) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = t("Close", "Tutup"),
-                        tint = DeckTextPrimary
-                    )
-                }
-            }
-
-            if (location.isNotEmpty()) {
-                Surface(
-                    color = DeckSurfaceVariant,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Text(
-                            text = t("Now scanning", "Sedang memindai"),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = DeckTextSecondary
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = location,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = DeckTextPrimary,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-            }
-
-            if (foundCount != null || newCount != null || skippedCount != null) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceAround
-                ) {
-                    ScanStat(foundCount?.toString() ?: "–", t("Found", "Ditemukan"))
-                    ScanStat(newCount?.toString() ?: "–", t("New", "Baru"))
-                    ScanStat(skippedCount?.toString() ?: "–", t("Skipped", "Dilewati"))
-                }
-            }
-
-            if (progressFraction != null || isRunning) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = categoryLabel ?: t("Progress", "Progres"),
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = DeckTextPrimary
-                        )
-                        if (progressFraction != null) {
-                            Text(
-                                text = "${(progressFraction.coerceIn(0f, 1f) * 100).roundToInt()}%",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = DeckAccentBlue
-                            )
-                        }
-                    }
-                    DeckProgressBar(
-                        fraction = progressFraction,
-                        modifier = Modifier.fillMaxWidth(),
-                        trackColor = Color.White.copy(alpha = 0.12f)
-                    )
-                }
-            }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp, bottom = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                if (isScanActive) {
-                    OutlinedButton(
-                        onClick = onTogglePause,
-                        shape = RoundedCornerShape(24.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = DeckTextPrimary),
-                        border = BorderStroke(1.dp, DeckDivider),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (isScanPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            if (isScanPaused) t("Resume", "Lanjutkan") else t("Pause", "Jeda"),
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-
-                OutlinedButton(
-                    onClick = onStopScan,
-                    shape = RoundedCornerShape(24.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = DeckBadgeRed),
-                    border = BorderStroke(1.dp, DeckBadgeRed),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(48.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = null,
-                        tint = DeckBadgeRed,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = if (isScanActive) t("Cancel scan", "Batal pemindaian") else t("Close", "Tutup"),
-                        fontWeight = FontWeight.Bold,
-                        color = DeckBadgeRed
-                    )
-                }
-            }
-        }
-    }
-}
-
 
 @Composable
 fun rememberBottomBarPadding(extra: Dp = 16.dp): Dp {
@@ -1197,7 +946,6 @@ fun ContinueHeroCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     coverUri: Uri? = null,
-    categoryLabel: String? = null,
 ) {
     Card(
         shape = RoundedCornerShape(16.dp),
@@ -1288,102 +1036,3 @@ fun ContinueHeroCard(
     }
 }
 
-@Composable
-fun RedesignedComicCard(
-    title: String,
-    pageCountText: String,
-    isFavorite: Boolean,
-    progressFraction: Float = 0f,
-    onClick: () -> Unit,
-    onFavoriteClick: () -> Unit,
-    onMenuClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    coverContent: @Composable BoxScope.() -> Unit,
-) {
-    val lang = LocalLanguage.current
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(2f / 3f)
-                .clip(RoundedCornerShape(12.dp))
-                .background(DeckSurface)
-        ) {
-            coverContent()
-
-            IconButton(
-                onClick = onFavoriteClick,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(4.dp)
-                    .size(34.dp)
-            ) {
-                Icon(
-                    imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                    contentDescription = translate(lang, "Favorite", "Favorit"),
-                    tint = if (isFavorite) DeckBadgeRed else Color.White,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-
-            if (pageCountText.isNotEmpty()) {
-                Text(
-                    text = pageCountText,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    style = LocalTextStyle.current.copy(
-                        shadow = Shadow(
-                            color = Color.Black.copy(alpha = 0.9f),
-                            offset = Offset(0f, 1.5f),
-                            blurRadius = 4f,
-                        ),
-                    ),
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(end = 8.dp, bottom = if (progressFraction > 0f) 10.dp else 6.dp)
-                )
-            }
-
-            if (progressFraction > 0f) {
-                DeckProgressBar(
-                    fraction = progressFraction,
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .fillMaxWidth(),
-                    square = true
-                )
-            }
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.Top,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = title,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = DeckTextPrimary,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                lineHeight = 18.sp,
-                modifier = Modifier.weight(1f)
-            )
-            IconButton(onClick = onMenuClick, modifier = Modifier.size(32.dp)) {
-                Icon(
-                    imageVector = Icons.Default.MoreVert,
-                    contentDescription = translate(lang, "Menu", "Menu"),
-                    tint = DeckTextSecondary,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-        }
-    }
-}

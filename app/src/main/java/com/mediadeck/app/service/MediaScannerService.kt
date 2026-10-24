@@ -40,7 +40,7 @@ class MediaScannerService : Service() {
                     e.printStackTrace()
                 }
             } else {
-                val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                val manager = context.getSystemService(NOTIFICATION_SERVICE) as? NotificationManager
                 val pendingIntent = PendingIntent.getActivity(
                     context,
                     0,
@@ -68,7 +68,7 @@ class MediaScannerService : Service() {
                     action = ACTION_STOP
                 }
                 context.startService(intent)
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 try {
                     val intent = Intent(context, MediaScannerService::class.java)
                     context.stopService(intent)
@@ -94,12 +94,7 @@ class MediaScannerService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                stopForeground(STOP_FOREGROUND_REMOVE)
-            } else {
-                @Suppress("DEPRECATION")
-                stopForeground(true)
-            }
+            stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
         }
@@ -123,14 +118,9 @@ class MediaScannerService : Service() {
     }
 
     override fun onDestroy() {
-        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+        val manager = getSystemService(NOTIFICATION_SERVICE) as? NotificationManager
         manager?.cancel(NOTIFICATION_ID)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
-        } else {
-            @Suppress("DEPRECATION")
-            stopForeground(true)
-        }
+        stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
         isServiceRunning = false
     }
@@ -163,7 +153,7 @@ class MediaScannerService : Service() {
             ).apply {
                 description = "Notifikasi saat memindai media pustaka"
             }
-            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            val manager = getSystemService(NOTIFICATION_SERVICE) as? NotificationManager
             manager?.createNotificationChannel(channel)
         }
     }

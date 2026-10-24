@@ -1,5 +1,4 @@
 package com.mediadeck.app.util.zip
-import com.mediadeck.app.util.scan.NaturalOrderComparator
 import java.io.File
 import java.io.InputStream
 import java.io.IOException
@@ -35,29 +34,12 @@ class ZipEntryReader(private val zipFile: File) {
                 override fun reset() = delegate.reset()
                 override fun markSupported(): Boolean = delegate.markSupported()
                 override fun close() {
-                    try {
-                        delegate.close()
-                    } finally {
-                        zip.close()
-                    }
+                    zip.use { delegate.close() }
                 }
             }
         } catch (e: Exception) {
             zip.close()
             throw e
-        }
-    }
-    fun listEntries(filter: (String) -> Boolean = { true }): List<String> {
-        return try {
-            ZipFile(zipFile).use { zip ->
-                zip.entries().asSequence()
-                    .filter { !it.isDirectory && filter(it.name) }
-                    .map { it.name }
-                    .sortedWith(NaturalOrderComparator)
-                    .toList()
-            }
-        } catch (e: ZipException) {
-            throw ZipCorruptedException(e)
         }
     }
 }

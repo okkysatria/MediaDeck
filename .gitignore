@@ -13,6 +13,8 @@ local.properties
 .env.*
 !.env.example
 secrets.properties
+keystore.properties
+.secrets/
 
 # IDE
 .idea/
@@ -30,9 +32,15 @@ Thumbs.db
 *.keystore
 *.p12
 *.pfx
+*.jceks
 *.key
 *.pem
+*.der
+*.crt
+*.asc
+*.gpg
 id_rsa*
+debug.keystore
 
 # Build artifacts / temp
 *.apk

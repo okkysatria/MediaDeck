@@ -3,10 +3,13 @@ import android.content.Context
 import android.graphics.*
 import android.media.MediaDataSource
 import android.media.MediaMetadataRetriever
-import android.net.Uri
 import android.util.Log
 import android.util.LruCache
 import android.os.SystemClock
+import androidx.core.graphics.createBitmap
+import androidx.core.graphics.scale
+import androidx.core.graphics.withClip
+import androidx.core.net.toUri
 import com.mediadeck.app.BuildConfig
 import com.mediadeck.app.data.settings.AppSettings
 import com.mediadeck.app.util.cache.CacheEntryLock
@@ -64,18 +67,18 @@ object VideoThumbnailHelper {
     private val localImageSemaphore = Semaphore(3)
     private val localVideoSemaphore = Semaphore(2)
     private val smbSemaphore = Semaphore(5)
-    private fun downscaleBitmap(src: Bitmap, maxDimension: Int): Bitmap {
+    private fun downscaleBitmap(src: Bitmap): Bitmap {
         val w = src.width
         val h = src.height
-        if ((w <= maxDimension && h <= maxDimension) || w <= 0 || h <= 0) return src
-        val scale = maxDimension.toFloat() / maxOf(w, h)
+        if ((w <= MAX_THUMB_DIMENSION && h <= MAX_THUMB_DIMENSION) || w <= 0 || h <= 0) return src
+        val scale = MAX_THUMB_DIMENSION.toFloat() / maxOf(w, h)
         val newW = (w * scale).toInt().coerceAtLeast(1)
         val newH = (h * scale).toInt().coerceAtLeast(1)
         return try {
-            val scaled = Bitmap.createScaledBitmap(src, newW, newH, true)
+            val scaled = src.scale(newW, newH, filter = true)
             if (scaled !== src) src.recycle()
             scaled
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             src
         }
     }
@@ -121,7 +124,7 @@ object VideoThumbnailHelper {
         memoryCache.evictAll()
     }
     fun createFolderMosaic(bitmaps: List<Bitmap>, dimension: Int = EXPLORE_THUMB_DIMENSION): Bitmap {
-        val result = Bitmap.createBitmap(dimension, dimension, Bitmap.Config.ARGB_8888)
+        val result = createBitmap(dimension, dimension)
         val canvas = Canvas(result)
         val half = dimension / 2
         val paint = Paint(Paint.FILTER_BITMAP_FLAG)
@@ -131,29 +134,28 @@ object VideoThumbnailHelper {
             val top = (index / 2) * half
             val bW = bitmap.width
             val bH = bitmap.height
-            val scale = Math.max(half.toFloat() / bW, half.toFloat() / bH)
+            val scale = maxOf(half.toFloat() / bW, half.toFloat() / bH)
             val scaledW = (bW * scale).toInt()
             val scaledH = (bH * scale).toInt()
             val dx = (half - scaledW) / 2
             val dy = (half - scaledH) / 2
             val dst = Rect(left + dx, top + dy, left + dx + scaledW, top + dy + scaledH)
-            canvas.save()
-            canvas.clipRect(left, top, left + half, top + half)
-            canvas.drawBitmap(bitmap, null, dst, paint)
-            canvas.restore()
+            canvas.withClip(left, top, left + half, top + half) {
+                drawBitmap(bitmap, null, dst, paint)
+            }
         }
         return result
     }
-    private fun decodeThumbnailFile(file: File, maxDimension: Int = MAX_THUMB_DIMENSION): Bitmap? {
+    private fun decodeThumbnailFile(file: File): Bitmap? {
         return try {
             val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(file.absolutePath, options)
             options.apply {
                 inJustDecodeBounds = false
-                inSampleSize = calculateInSampleSize(outWidth, outHeight, maxDimension, maxDimension)
+                inSampleSize = calculateInSampleSize(outWidth, outHeight)
             }
             BitmapFactory.decodeFile(file.absolutePath, options)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             null
         }
     }
@@ -172,14 +174,13 @@ object VideoThumbnailHelper {
         onVideoMetadata: ((durationMs: Long, width: Int, height: Int) -> Unit)? = null,
         onImageMetadata: ((width: Int, height: Int) -> Unit)? = null,
     ): Bitmap? = withContext(Dispatchers.IO) {
-        val maxDimension = MAX_THUMB_DIMENSION
         val cacheKey = "v3|$variant|$mediaId"
         memoryCache.get(cacheKey)?.let { return@withContext it }
         val cacheFilename = getCacheFilename(mediaId, variant)
         val thumbFolder = getThumbnailFolder(context)
         val cacheFile = File(thumbFolder, cacheFilename)
         if (cacheFile.exists() && cacheFile.length() > 0L) {
-            val bmp = decodeThumbnailFile(cacheFile, maxDimension)
+            val bmp = decodeThumbnailFile(cacheFile)
             if (bmp != null) {
                 memoryCache.put(cacheKey, bmp)
                 return@withContext bmp
@@ -190,14 +191,14 @@ object VideoThumbnailHelper {
         return@withContext entryLock.withLock(cacheFilename) {
             memoryCache.get(cacheKey)?.let { return@withLock it }
             if (cacheFile.exists() && cacheFile.length() > 0L) {
-                decodeThumbnailFile(cacheFile, maxDimension)?.let {
+                decodeThumbnailFile(cacheFile)?.let {
                     memoryCache.put(cacheKey, it)
                     return@withLock it
                 }
             }
             val isSmb = MediaUtils.isSmbUri(uriString)
-            val isImage = com.mediadeck.app.util.media.MediaUtils.isImageMime(context.contentResolver.getType(Uri.parse(uriString))) ||
-                com.mediadeck.app.util.media.MediaUtils.isImageExt(com.mediadeck.app.util.media.MediaUtils.getFileExt(uriString))
+            val isImage = MediaUtils.isImageMime(context.contentResolver.getType(uriString.toUri())) ||
+                MediaUtils.isImageExt(MediaUtils.getFileExt(uriString))
             val generationSemaphore = when {
                 isSmb -> smbSemaphore
                 isImage -> localImageSemaphore
@@ -206,11 +207,11 @@ object VideoThumbnailHelper {
             generationSemaphore.withPermit {
                 yield()
                 val generatedRaw = if (isImage) {
-                    generateImageThumbnail(context, uriString, isSmb, maxDimension, settings, onImageMetadata)
+                    generateImageThumbnail(context, uriString, isSmb, settings, onImageMetadata)
                 } else {
-                    generateVideoThumbnail(context, uriString, isSmb, maxDimension, settings, durationMs, onVideoMetadata)
+                    generateVideoThumbnail(context, uriString, isSmb, settings, durationMs, onVideoMetadata)
                 }
-                val generatedBmp = generatedRaw?.let { downscaleBitmap(it, maxDimension) }
+                val generatedBmp = generatedRaw?.let(::downscaleBitmap)
                 if (generatedBmp != null) {
                     val tempFile = File(thumbFolder, "$cacheFilename.tmp")
                     var saved = false
@@ -218,17 +219,17 @@ object VideoThumbnailHelper {
                     try {
                         FileOutputStream(tempFile).use { out ->
                             if (!generatedBmp.compress(Bitmap.CompressFormat.JPEG, THUMBNAIL_JPEG_QUALITY, out)) {
-                                throw java.io.IOException("Gagal mengompres thumbnail")
+                                throw IOException("Gagal mengompres thumbnail")
                             }
                         }
                         if (cacheFile.exists() && !cacheFile.delete()) {
-                            throw java.io.IOException("Gagal mengganti thumbnail lama")
+                            throw IOException("Gagal mengganti thumbnail lama")
                         }
                         if (!tempFile.renameTo(cacheFile)) {
-                            throw java.io.IOException("Gagal memindahkan thumbnail sementara")
+                            throw IOException("Gagal memindahkan thumbnail sementara")
                         }
                         saved = cacheFile.isFile && cacheFile.length() > 0L
-                        if (!saved) throw java.io.IOException("File thumbnail kosong")
+                        if (!saved) throw IOException("File thumbnail kosong")
                     } catch (e: Exception) {
                         Log.e("VideoThumbnailHelper", "Gagal menyimpan thumbnail $uriString", e)
                     } finally {
@@ -251,7 +252,6 @@ object VideoThumbnailHelper {
         context: Context,
         uriString: String,
         isSmb: Boolean,
-        maxDimension: Int,
         settings: AppSettings?,
         onImageMetadata: ((width: Int, height: Int) -> Unit)?,
     ): Bitmap? {
@@ -275,7 +275,7 @@ object VideoThumbnailHelper {
                 if (options.outWidth > 0 && options.outHeight > 0) onImageMetadata?.invoke(options.outWidth, options.outHeight)
                 options.apply {
                     inJustDecodeBounds = false
-                    inSampleSize = calculateInSampleSize(outWidth, outHeight, maxDimension, maxDimension)
+                    inSampleSize = calculateInSampleSize(outWidth, outHeight)
                 }
                 val decodedBmp = smbFile.getInputStream().use { raw ->
                     BufferedInputStream(countingInputStream(raw) { smbBytes += it }, 1 shl 20).use {
@@ -286,7 +286,7 @@ object VideoThumbnailHelper {
                 if (BuildConfig.DEBUG) Log.d(TAG, "SMB image I/O uri=$uriString bytes=$smbBytes")
                 decodedBmp
             } else {
-                val uri = Uri.parse(uriString)
+                val uri = uriString.toUri()
                 val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 context.contentResolver.openInputStream(uri)?.use { raw ->
                     BufferedInputStream(raw, 1 shl 20).use { inputStream ->
@@ -296,7 +296,7 @@ object VideoThumbnailHelper {
                 if (options.outWidth > 0 && options.outHeight > 0) onImageMetadata?.invoke(options.outWidth, options.outHeight)
                 options.apply {
                     inJustDecodeBounds = false
-                    inSampleSize = calculateInSampleSize(outWidth, outHeight, maxDimension, maxDimension)
+                    inSampleSize = calculateInSampleSize(outWidth, outHeight)
                 }
                 context.contentResolver.openInputStream(uri)?.use { raw ->
                     BufferedInputStream(raw, 1 shl 20).use { inputStream ->
@@ -307,13 +307,12 @@ object VideoThumbnailHelper {
         } catch (e: Exception) {
             throw e
         } ?: return null
-        return downscaleBitmap(bmp, maxDimension)
+        return downscaleBitmap(bmp)
     }
     private suspend fun generateVideoThumbnail(
         context: Context,
         uriString: String,
         isSmb: Boolean,
-        maxDimension: Int,
         settings: AppSettings?,
         durationMs: Long = 0L,
         onVideoMetadata: ((durationMs: Long, width: Int, height: Int) -> Unit)? = null,
@@ -334,42 +333,43 @@ object VideoThumbnailHelper {
                 } finally {
                     logSmbStage("video open random-access source", sourceStartedAt)
                 }
-                try {
-                    val setDataSourceStartedAt = SystemClock.elapsedRealtime()
+                smbSource.use { source ->
                     try {
-                        retriever.setDataSource(smbSource)
+                        val setDataSourceStartedAt = SystemClock.elapsedRealtime()
+                        try {
+                            retriever.setDataSource(source)
+                        } finally {
+                            logSmbStage("video setDataSource", setDataSourceStartedAt)
+                        }
+                        val metadataStartedAt = SystemClock.elapsedRealtime()
+                        val finalDurationUs = try {
+                            readVideoMetadata(retriever, durationMs, onVideoMetadata)
+                        } finally {
+                            logSmbStage("video read metadata", metadataStartedAt)
+                        }
+                        val frameStartedAt = SystemClock.elapsedRealtime()
+                        val frame = try {
+                            extractFrame(retriever, finalDurationUs)
+                        } finally {
+                            logSmbStage("video getScaledFrameAtTime", frameStartedAt)
+                        }
+                        frame
                     } finally {
-                        logSmbStage("video setDataSource", setDataSourceStartedAt)
+                        if (BuildConfig.DEBUG) Log.d(TAG, source.ioSummary(uriString))
                     }
-                    val metadataStartedAt = SystemClock.elapsedRealtime()
-                    val finalDurationUs = try {
-                        readVideoMetadata(retriever, durationMs, onVideoMetadata)
-                    } finally {
-                        logSmbStage("video read metadata", metadataStartedAt)
-                    }
-                    val frameStartedAt = SystemClock.elapsedRealtime()
-                    val frame = try {
-                        extractFrame(retriever, maxDimension, finalDurationUs)
-                    } finally {
-                        logSmbStage("video getScaledFrameAtTime", frameStartedAt)
-                    }
-                    frame
-                } finally {
-                    if (BuildConfig.DEBUG) Log.d(TAG, smbSource.ioSummary(uriString))
-                    smbSource.close()
                 }
             } else {
-                val uri = Uri.parse(uriString)
+                val uri = uriString.toUri()
                 if (uri.scheme == "content") {
                     context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
                         retriever.setDataSource(pfd.fileDescriptor)
                         val finalDurationUs = readVideoMetadata(retriever, durationMs, onVideoMetadata)
-                        extractFrame(retriever, maxDimension, finalDurationUs)
+                        extractFrame(retriever, finalDurationUs)
                     }
                 } else {
                     retriever.setDataSource(context, uri)
                     val finalDurationUs = readVideoMetadata(retriever, durationMs, onVideoMetadata)
-                    extractFrame(retriever, maxDimension, finalDurationUs)
+                    extractFrame(retriever, finalDurationUs)
                 }
             }
         } catch (e: Exception) {
@@ -396,62 +396,26 @@ object VideoThumbnailHelper {
         }
         return durationMs * 1000L
     }
-    private fun extractFrame(retriever: MediaMetadataRetriever, maxDimension: Int, durationUs: Long = 0L): Bitmap? {
+    private fun extractFrame(retriever: MediaMetadataRetriever, durationUs: Long = 0L): Bitmap? {
         val timeUs = if (durationUs > 0) (durationUs * 0.4).toLong() else 10_000_000L
         return try {
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O_MR1) {
-                retriever.getScaledFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, maxDimension, maxDimension)
-                    ?: retriever.getScaledFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, maxDimension, maxDimension)
+                retriever.getScaledFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, MAX_THUMB_DIMENSION, MAX_THUMB_DIMENSION)
+                    ?: retriever.getScaledFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, MAX_THUMB_DIMENSION, MAX_THUMB_DIMENSION)
             } else {
                 retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                     ?: retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
         }
     }
-    suspend fun extractDurationOnly(context: Context, uriString: String, settings: AppSettings? = null): Long = withContext(Dispatchers.IO) {
-        val isSmb = MediaUtils.isSmbUri(uriString)
-        val retriever = MediaMetadataRetriever()
-        var durationMs = 0L
-        try {
-            if (isSmb) {
-                val smbUrl = MediaUtils.getSmbUrlFromUri(uriString)
-                if (smbUrl != null) {
-                    val smbFile = SmbConnectionManager.getSmbFile(context, smbUrl, settings)
-                    val smbSource = SmbMediaDataSource(smbFile, SmbConnectionManager.openRandomAccess(smbFile))
-                    try {
-                        retriever.setDataSource(smbSource)
-                        durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-                    } finally {
-                        smbSource.close()
-                    }
-                }
-            } else {
-                val uri = Uri.parse(uriString)
-                if (uri.scheme == "content") {
-                    context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
-                        retriever.setDataSource(pfd.fileDescriptor)
-                        durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-                    }
-                } else {
-                    retriever.setDataSource(context, uri)
-                    durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-                }
-            }
-        } catch (e: Exception) {
-            Log.e("VideoThumbnailHelper", "Gagal extract durasi: $uriString", e)
-        } finally {
-            try { retriever.release() } catch (_: Exception) {}
-        }
-        durationMs
-    }
-    private fun calculateInSampleSize(width: Int, height: Int, reqWidth: Int, reqHeight: Int): Int {
+    private fun calculateInSampleSize(width: Int, height: Int): Int {
         var inSampleSize = 1
-        if (height > reqHeight || width > reqWidth) {
+        if (height > MAX_THUMB_DIMENSION || width > MAX_THUMB_DIMENSION) {
             val halfHeight: Int = height / 2
             val halfWidth: Int = width / 2
-            while (halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
+            while (halfHeight / inSampleSize >= MAX_THUMB_DIMENSION && halfWidth / inSampleSize >= MAX_THUMB_DIMENSION) {
                 inSampleSize *= 2
             }
         }
@@ -461,11 +425,11 @@ object VideoThumbnailHelper {
         val smbUrl = MediaUtils.getSmbUrlFromUri(uriString) ?: return null
         return try {
             SmbConnectionManager.getSmbFile(context, smbUrl, providedSettings)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             null
         }
     }
-    class SmbMediaDataSource(private val smbFile: SmbFile, private val raf: SmbRandomAccess) : MediaDataSource() {
+    class SmbMediaDataSource(smbFile: SmbFile, private val raf: SmbRandomAccess) : MediaDataSource() {
         private val size = smbFile.length()
         private val lock = Any()
         private val blockSize = 256 * 1024

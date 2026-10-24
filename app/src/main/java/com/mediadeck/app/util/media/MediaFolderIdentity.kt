@@ -1,9 +1,9 @@
 package com.mediadeck.app.util.media
-import android.net.Uri
+import androidx.core.net.toUri
 object MediaFolderIdentity {
     fun key(folderUri: String, mediaUri: String): String {
         val source = folderUri.ifBlank {
-            val uri = Uri.parse(mediaUri)
+            val uri = mediaUri.toUri()
             val encodedPath = uri.encodedPath.orEmpty()
             val documentMarker = "/document/"
             if (documentMarker in encodedPath) {
@@ -21,7 +21,7 @@ object MediaFolderIdentity {
         return source.trimEnd('/')
     }
     fun displayName(folderUri: String, mediaUri: String, fallback: String): String {
-        val folder = Uri.parse(key(folderUri, mediaUri))
+        val folder = key(folderUri, mediaUri).toUri()
         val lastSegment = folder.lastPathSegment.orEmpty()
             .substringAfterLast('/')
             .substringAfterLast(':')
@@ -32,7 +32,7 @@ object MediaFolderIdentity {
     }
     fun parentDisplayName(folderUri: String, mediaUri: String): String? {
         val folderKey = key(folderUri, mediaUri)
-        val folder = Uri.parse(folderKey)
+        val folder = folderKey.toUri()
         val lastSegment = folder.lastPathSegment.orEmpty().substringAfterLast(':')
         val documentParent = lastSegment.substringBeforeLast('/', "")
             .substringAfterLast('/')

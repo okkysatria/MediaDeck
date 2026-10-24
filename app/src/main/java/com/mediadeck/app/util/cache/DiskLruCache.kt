@@ -3,7 +3,6 @@ import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
-import java.io.IOException
 interface DiskLruCache {
     fun get(key: String): File?
     fun put(key: String, writer: (OutputStream) -> Unit): File?
@@ -15,7 +14,7 @@ class SimpleDiskLruCache(
     private val cacheDir: File,
     private val namespace: String
 ) : DiskLruCache {
-    private val TAG = "SimpleDiskLruCache"
+    private val tag = "SimpleDiskLruCache"
     init {
         if (!cacheDir.exists()) {
             cacheDir.mkdirs()
@@ -53,7 +52,7 @@ class SimpleDiskLruCache(
                     if (finalFile.exists() && finalFile.length() > 0L) {
                         return finalFile
                     }
-                    Log.e(TAG, "Failed to rename temp file to final file: $key")
+                    Log.e(tag, "Failed to rename temp file to final file: $key")
                 }
             }
             return null

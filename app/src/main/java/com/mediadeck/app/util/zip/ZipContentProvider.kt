@@ -53,8 +53,7 @@ class ZipContentProvider : ContentProvider() {
         }
         pruneCacheIfNecessary()
         return runBlocking {
-            val result = pageExtractor.extractPage(zipFilePath, entryName)
-            when (result) {
+            when (val result = pageExtractor.extractPage(zipFilePath, entryName)) {
                 is ExtractResult.Success -> {
                     ParcelFileDescriptor.open(result.file, ParcelFileDescriptor.MODE_READ_ONLY)
                 }

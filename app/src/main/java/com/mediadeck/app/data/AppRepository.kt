@@ -50,10 +50,7 @@ class AppRepository(
     }
     val allComics: Flow<List<Comic>> = comicDao.getAllComics()
     suspend fun getAllComicsDirect(): List<Comic> = comicDao.getAllComicsDirect()
-    suspend fun getComicById(id: Long): Comic? = comicDao.getComicById(id)
-    fun getComicPages(comicId: Long): Flow<List<ComicPage>> = comicDao.getComicPages(comicId)
     suspend fun getComicPagesDirect(comicId: Long): List<ComicPage> = comicDao.getComicPagesDirect(comicId)
-    suspend fun insertComic(comic: Comic): Long = comicDao.insertComic(comic)
     suspend fun insertComics(comics: List<Comic>) = comicDao.insertComics(comics)
     suspend fun insertComicPages(pages: List<ComicPage>) = comicDao.insertComicPages(pages)
     suspend fun updateComic(comic: Comic) = comicDao.updateComic(comic)
@@ -64,10 +61,6 @@ class AppRepository(
     suspend fun deleteComic(context: Context, comic: Comic) {
         deletePhysicalThumbnail(context, comic.id)
         comicDao.deleteComicWithPages(comic.id)
-    }
-    suspend fun deleteComicById(context: Context, id: Long) {
-        deletePhysicalThumbnail(context, id)
-        comicDao.deleteComicWithPages(id)
     }
     suspend fun clearAllComics(context: Context) {
         val comics = getAllComicsDirect()
@@ -85,7 +78,6 @@ class AppRepository(
     suspend fun resetAllComicHistory() = comicDao.resetAllComicHistory()
     val allGalleryItems: Flow<List<GalleryItem>> = galleryDao.getAllGalleryItems()
     suspend fun getAllGalleryItemsDirect(): List<GalleryItem> = galleryDao.getAllGalleryItemsDirect()
-    suspend fun insertGalleryItem(item: GalleryItem): Long = galleryDao.insertGalleryItem(item)
     suspend fun insertGalleryItems(items: List<GalleryItem>): List<Long> = galleryDao.insertGalleryItems(items)
     suspend fun updateGalleryItem(item: GalleryItem) = galleryDao.updateGalleryItem(item)
     suspend fun deleteGalleryItem(context: Context, item: GalleryItem) {
@@ -126,28 +118,16 @@ class AppRepository(
         }
     }
     suspend fun getScannedFolders(): List<ScannedFolder> = settingsDao.getAllScannedFolders()
-    suspend fun insertScannedFolder(folder: ScannedFolder) = settingsDao.insertScannedFolder(folder)
     suspend fun insertScannedFolders(folders: List<ScannedFolder>) {
         folders.chunked(400).forEach { settingsDao.insertScannedFolders(it) }
     }
-    suspend fun deleteScannedFolder(uri: String) = settingsDao.deleteScannedFolder(uri)
     val allMovies: Flow<List<Movie>> = movieDao.getAllMovies()
     suspend fun getAllMoviesDirect(): List<Movie> = movieDao.getAllMoviesDirect()
-    suspend fun insertMovie(movie: Movie): Long = movieDao.insertMovie(movie)
     suspend fun insertMovies(movies: List<Movie>): List<Long> = movieDao.insertMovies(movies)
     suspend fun updateMovie(movie: Movie) = movieDao.updateMovie(movie)
     suspend fun deleteMovie(context: Context, movie: Movie) {
         deletePhysicalThumbnail(context, movie.id)
         movieDao.deleteMovie(movie)
-    }
-    suspend fun deleteMoviesByIds(context: Context, ids: List<Long>) {
-        if (ids.isEmpty()) return
-        ids.forEach { id ->
-            deletePhysicalThumbnail(context, id)
-        }
-        ids.chunked(900).forEach { batch ->
-            movieDao.deleteMoviesByIds(batch)
-        }
     }
     suspend fun clearAllMovies(context: Context) {
         val movies = getAllMoviesDirect()
@@ -164,13 +144,6 @@ class AppRepository(
     }
     suspend fun updateMovieMetadata(uri: String, duration: Long, resolution: String, hasThumbnail: Boolean) = movieDao.updateMovieMetadata(uri, duration, resolution, hasThumbnail)
     suspend fun resetAllMovieHistory() = movieDao.resetAllMovieHistory()
-    suspend fun getMoviesByFolderName(folderName: String): List<Movie> = movieDao.getMoviesByFolderName(folderName)
-    suspend fun getGalleryItemsByFolderName(folderName: String): List<GalleryItem> = galleryDao.getGalleryItemsByFolderName(folderName)
-    suspend fun getComicsByFolderName(folderName: String): List<Comic> = comicDao.getComicsByFolderName(folderName)
-    suspend fun getMoviesUnderFolder(folderUri: String): List<Movie> =
-        movieDao.getMoviesByUriPrefixDirect(folderUri.removeSuffix("/"))
-    suspend fun getGalleryItemsUnderFolder(folderUri: String): List<GalleryItem> =
-        galleryDao.getGalleryItemsByUriPrefixDirect(folderUri.removeSuffix("/"))
     suspend fun deleteMediaByFolderUri(context: Context, folderUri: String) {
         val normalizedUri = folderUri.removeSuffix("/")
         val moviesInFolder = movieDao.getMoviesByUriPrefixDirect(normalizedUri)
@@ -191,14 +164,6 @@ class AppRepository(
                 galleryDao.getGalleryItemsByUriPrefixDirect(normalizedUri).size +
                 comicDao.getComicsByFolderUriPrefixDirect(normalizedUri).size,
         )
-    }
-    fun getCacheSettings(): Flow<CacheSettings> {
-        return settingsDao.getSettingsFlow().map { settings ->
-            CacheSettings(
-                limitMB = settings?.cacheSizeLimitMB ?: 200,
-                targetMB = settings?.cachePurgeTargetMB ?: 100
-            )
-        }
     }
     suspend fun getCacheSettingsSync(): CacheSettings {
         val settings = settingsDao.getSettingsDirect()

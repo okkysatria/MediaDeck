@@ -1,16 +1,16 @@
 package com.mediadeck.app.util.media
 import android.content.Context
-import android.net.Uri
+import androidx.core.net.toUri
 object MediaUtils {
     fun isSmbUri(uriString: String): Boolean {
-        val uri = Uri.parse(uriString)
+        val uri = uriString.toUri()
         return uri.scheme.equals("smb", ignoreCase = true) ||
             (uri.scheme.equals("content", ignoreCase = true) &&
                 uri.authority?.equals(com.mediadeck.app.util.smb.SmbContentProvider.AUTHORITY, ignoreCase = true) == true)
     }
     fun isUriAccessible(context: Context, uriStr: String?): Boolean {
         if (uriStr.isNullOrEmpty()) return false
-        val uri = Uri.parse(uriStr)
+        val uri = uriStr.toUri()
         return when (uri.scheme) {
             "content" -> {
                 try {
@@ -69,7 +69,7 @@ object MediaUtils {
         return isImageExt(ext) || isVideoExt(ext)
     }
     fun getSmbUrlFromUri(uriString: String): String? {
-        val uri = Uri.parse(uriString)
+        val uri = uriString.toUri()
         return when {
             isSmbUri(uriString) && uri.scheme.equals("content", ignoreCase = true) -> {
                 val path = uri.path ?: return null

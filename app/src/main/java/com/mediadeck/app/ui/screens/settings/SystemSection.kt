@@ -75,7 +75,6 @@ fun SystemSection(
     }
     LaunchedEffect(Unit) {
         refreshCacheSize()
-        viewModel.refreshThumbnailsSize()
     }
     LaunchedEffect(cacheClearCompleted) {
         if (cacheClearCompleted > 0) refreshCacheSize()
@@ -85,12 +84,12 @@ fun SystemSection(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         SettingsSectionHeader(
-            t("Database Management", "Manajemen Database"),
-            Icons.Default.WarningAmber,
-            SettingsAccent.Error,
+            title = t("Database Management", "Manajemen Database"),
+            icon = Icons.Default.WarningAmber,
+            accent = SettingsAccent.Error,
             subtitle = t("These actions cannot be undone", "Tindakan ini tidak dapat dibatalkan"),
         )
-        SettingsCard(SettingsAccent.Error) {
+        SettingsCard {
             SettingsDangerRow(
                 title = t("Reset Comics", "Hapus Data Komik"),
                 icon = Icons.Default.AutoStories,
@@ -123,7 +122,7 @@ fun SystemSection(
             )
         }
         SettingsSectionHeader(t("Storage Management", "Manajemen Penyimpanan"))
-        SettingsCard(SettingsAccent.Secondary) {
+        SettingsCard {
             SettingsToggleRow(
                 title = t("Automatic Cleanup", "Pembersihan Otomatis"),
                 icon = Icons.AutoMirrored.Filled.Sort,

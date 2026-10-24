@@ -23,10 +23,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -35,8 +32,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -48,9 +43,6 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.MusicNote
-import androidx.compose.material.icons.outlined.SkipNext
-import androidx.compose.material.icons.outlined.SkipPrevious
-import androidx.compose.material.icons.outlined.Subtitles
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -114,7 +106,6 @@ import com.mediadeck.app.R
 import com.mediadeck.app.data.movie.Movie
 import com.mediadeck.app.util.i18n.t
 import com.mediadeck.app.util.media.MediaFolderIdentity
-import com.mediadeck.app.util.smb.SmbContentProvider
 import com.mediadeck.app.util.smb.SmbDataSource
 import com.mediadeck.app.util.scan.ScannerStateManager
 import com.mediadeck.app.viewmodel.MovieViewModel
@@ -146,7 +137,6 @@ private object PlayerDefaults {
     const val RESUME_PROMPT_THRESHOLD_MS = 1000L
     const val DRAG_SEEK_RANGE_SECONDS = 120
     const val SMB_MIN_BUFFER_MS = 5_000
-    const val SMB_MAX_BUFFER_MS = 60_000
     const val LOCAL_MIN_BUFFER_MS = 15_000
     const val LOCAL_MAX_BUFFER_MS = 50_000
     const val BUFFER_FOR_PLAYBACK_MS = 2_500
@@ -301,7 +291,7 @@ fun VideoPlayerScreen(
             if (isPlaying) {
                 while (true) {
                     updateSubtitle()
-                    delay(100)
+                    delay(100.milliseconds)
                 }
             } else {
                 updateSubtitle()
@@ -386,14 +376,13 @@ fun VideoPlayerScreen(
         player?.setPlaybackSpeed(playbackSpeed)
     }
     LaunchedEffect(player, playbackMode, videoPlaylist.size) {
-        player?.repeatMode = when {
-            playbackMode == PlaybackMode.ONE -> Player.REPEAT_MODE_ONE
-            playbackMode == PlaybackMode.ALL && videoPlaylist.size <= 1 -> Player.REPEAT_MODE_ONE
-            else -> Player.REPEAT_MODE_OFF
+        player?.repeatMode = when (playbackMode) {
+            PlaybackMode.ONE -> Player.REPEAT_MODE_ONE
+            PlaybackMode.ALL -> if (videoPlaylist.size <= 1) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+            PlaybackMode.OFF -> Player.REPEAT_MODE_OFF
         }
     }
     DisposableEffect(movie.id, movie.uri) {
-        val effectMovie = movie
         val exoPlayer = buildExoPlayer(
             context = context,
             movie = movie,
@@ -444,7 +433,7 @@ fun VideoPlayerScreen(
         exoPlayer.addListener(listener)
         player = exoPlayer
         onDispose {
-            latestSaveProgress.value(exoPlayer.currentPosition, effectMovie)
+            latestSaveProgress.value(exoPlayer.currentPosition, movie)
             exoPlayer.removeListener(listener)
             exoPlayer.release()
             if (player === exoPlayer) player = null
@@ -658,21 +647,18 @@ fun VideoPlayerScreen(
                     },
                     playbackMode = playbackMode,
                     onPlaybackModeChange = { playbackMode = it },
-                    hasPlaylist = videoPlaylist.size > 1,
                     onPrevious = {
-                        val playlist = videoPlaylist
-                        if (playlist.size > 1) {
-                            val prevIndex = (currentMovieIndex - 1 + playlist.size) % playlist.size
-                            viewModel.openMovie(playlist[prevIndex])
+                        if (videoPlaylist.size > 1) {
+                            val prevIndex = (currentMovieIndex - 1 + videoPlaylist.size) % videoPlaylist.size
+                            viewModel.openMovie(videoPlaylist[prevIndex])
                         } else {
                             player?.seekTo(0)
                         }
                     },
                     onNext = {
-                        val playlist = videoPlaylist
-                        if (playlist.size > 1) {
-                            val nextIndex = (currentMovieIndex + 1) % playlist.size
-                            viewModel.openMovie(playlist[nextIndex])
+                        if (videoPlaylist.size > 1) {
+                            val nextIndex = (currentMovieIndex + 1) % videoPlaylist.size
+                            viewModel.openMovie(videoPlaylist[nextIndex])
                         } else {
                             player?.let { p -> p.seekTo(p.duration) }
                         }
@@ -1174,9 +1160,6 @@ private fun GestureProgressIndicator(icon: ImageVector, percent: Int) {
         ),
     )
 }
-private val PlayerBarColor = Color(0xFF12151A).copy(alpha = 0.92f)
-private val PlayerPanelColor = Color(0xFF121418)
-private val PlayerOnAccent = Color(0xFF06182B)
 @Composable
 private fun FloatingUnlockButton(
     onUnlock: () -> Unit,
@@ -1268,7 +1251,6 @@ private fun BottomControlBar(
     onSliderDragFinished: () -> Unit,
     playbackMode: PlaybackMode,
     onPlaybackModeChange: (PlaybackMode) -> Unit,
-    hasPlaylist: Boolean,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     isPlaying: Boolean,

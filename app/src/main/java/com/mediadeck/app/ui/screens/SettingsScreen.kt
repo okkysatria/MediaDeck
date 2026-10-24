@@ -18,7 +18,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -53,9 +52,9 @@ import com.mediadeck.app.viewmodel.SettingsViewModel
 fun SettingsScreen(
     settingsViewModel: SettingsViewModel,
     scannerViewModel: ScannerViewModel,
+    modifier: Modifier = Modifier,
     onNavigateBack: (() -> Unit)? = null,
     showBackButton: Boolean = false,
-    modifier: Modifier = Modifier,
 ) {
     val settings by settingsViewModel.appSettings.collectAsState(AppSettings())
     val scrollState = rememberScrollState()

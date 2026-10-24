@@ -1,12 +1,12 @@
 package com.mediadeck.app.viewmodel
 import android.content.Context
-import android.net.Uri
 import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mediadeck.app.data.AppRepository
 import com.mediadeck.app.data.gallery.GalleryItem
 import com.mediadeck.app.data.settings.AppSettings
+import com.mediadeck.app.util.media.MediaUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -21,16 +21,13 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.yield
 import kotlin.time.Duration.Companion.milliseconds
 import java.io.File
 import com.mediadeck.app.util.media.VideoThumbnailHelper
 import com.mediadeck.app.util.media.MediaFolderIdentity
 import com.mediadeck.app.util.scan.MediaProcessingEngine
-import kotlinx.coroutines.ensureActive
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 @OptIn(kotlinx.coroutines.FlowPreview::class)
@@ -90,7 +87,8 @@ class GalleryViewModel @Inject constructor(
         _galleryFavoriteOnlyFilter,
         combine(_gallerySort, _shuffledItems, _selectedGalleryFolderName) { sort, shuffled, folder -> Triple(sort, shuffled, folder) },
     ) { search, tags, favorite, triple ->
-        GalleryFilterState(search, tags, favorite, triple.first, triple.second, triple.third)
+        val (sort, shuffled, folder) = triple
+        GalleryFilterState(search, tags, favorite, sort, shuffled, folder)
     }
     private val offlineFilteredGalleryItems: Flow<List<GalleryItem>> = combine(
         repository.allGalleryItems,
@@ -98,11 +96,11 @@ class GalleryViewModel @Inject constructor(
         _isSmbOnline,
     ) { items, settings, smbOnline ->
         if (settings.hideOfflineSmb && !smbOnline) {
-            items.filter { !com.mediadeck.app.util.media.MediaUtils.isSmbUri(it.uri) }
+            items.filter { !MediaUtils.isSmbUri(it.uri) }
         } else {
             items
         }
-    }.debounce(300L)
+    }.debounce(300.milliseconds)
     val appSettings: StateFlow<AppSettings> = repository.appSettings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AppSettings())
     val filteredGalleryItems: StateFlow<List<GalleryItem>> = combine(
@@ -156,7 +154,7 @@ class GalleryViewModel @Inject constructor(
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val galleryTagCounts: StateFlow<Map<String, Int>> = repository.allGalleryItems
-        .debounce(500L)
+        .debounce(500.milliseconds)
         .map { items ->
             val counts = mutableMapOf<String, Int>()
             items.forEach { item ->
@@ -173,9 +171,6 @@ class GalleryViewModel @Inject constructor(
         }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
-    val totalGalleryCount: StateFlow<Int> = offlineFilteredGalleryItems
-        .map { it.size }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
     fun setGallerySearch(query: String) {
         _gallerySearch.value = query
     }
@@ -313,13 +308,13 @@ class GalleryViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             val settings = repository.getSettingsDirect()
             var queued = 0
-            for (item in repository.getAllGalleryItemsDirect()) {
-                if (VideoThumbnailHelper.hasCachedThumbnail(context, item.id, "gallery")) continue
+            for ((id, uri) in repository.getAllGalleryItemsDirect()) {
+                if (VideoThumbnailHelper.hasCachedThumbnail(context, id, "gallery")) continue
                 MediaProcessingEngine.enqueue(
                     MediaProcessingEngine.ProcessingTask(
                         context = context,
-                        uri = item.uri,
-                        mediaId = item.id,
+                        uri = uri,
+                        mediaId = id,
                         settings = settings,
                         skipThumbnail = false,
                         thumbnailVariant = "gallery",
@@ -351,28 +346,6 @@ class GalleryViewModel @Inject constructor(
                 }
                 .toList()
             MediaProcessingEngine.enqueueFolderMediaBatch(folderName, tasks)
-        }
-    }
-    fun enqueueFolderThumbnail(
-        context: Context,
-        folderKey: String,
-        folderName: String?,
-        items: List<com.mediadeck.app.data.gallery.GalleryItem>,
-    ) {
-        if (items.isEmpty()) return
-        viewModelScope.launch(Dispatchers.IO) {
-            if (VideoThumbnailHelper.hasCachedFolderThumbnail(context, folderKey, folderName)) return@launch
-            val settings = repository.getSettingsDirect()
-            val mediaItems = items.asSequence()
-                .sortedBy { it.name.lowercase() }
-                .take(4)
-                .map { Triple(it.uri, it.id, "gallery") }
-                .toList()
-            if (mediaItems.isNotEmpty()) {
-                MediaProcessingEngine.enqueueFolderMosaic(
-                    MediaProcessingEngine.FolderMosaicTask(context, folderKey, mediaItems, settings),
-                )
-            }
         }
     }
     fun setScrollPosition(index: Int, offset: Int) {

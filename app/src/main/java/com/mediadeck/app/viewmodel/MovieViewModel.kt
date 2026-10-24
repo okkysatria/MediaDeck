@@ -25,18 +25,15 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.yield
 import kotlin.time.Duration.Companion.milliseconds
 import java.io.File
 import java.io.FileOutputStream
@@ -90,11 +87,11 @@ class MovieViewModel @Inject constructor(
         _isSmbOnline,
     ) { items, settings, smbOnline ->
         if (settings.hideOfflineSmb && !smbOnline) {
-            items.filter { !com.mediadeck.app.util.media.MediaUtils.isSmbUri(it.uri) }
+            items.filter { !MediaUtils.isSmbUri(it.uri) }
         } else {
             items
         }
-    }.debounce(300L)
+    }.debounce(300.milliseconds)
     val filteredMovies: StateFlow<List<Movie>> = combine(
         offlineFilteredMovies,
         combine(
@@ -103,10 +100,11 @@ class MovieViewModel @Inject constructor(
             _movieSort,
             combine(_movieSelectedTagsFilter, _shuffledMovies, _selectedMovieFolderName) { tags, shuffled, folder -> Triple(tags, shuffled, folder) }
         ) { search, tab, sort, triple ->
-            GalleryFilterStateNested(search, tab, sort, triple.first, triple.second, triple.third)
+            val (tags, shuffled, folder) = triple
+            GalleryFilterStateNested(search, tab, sort, tags, shuffled, folder)
         }
     ) { items, filters ->
-        if (items.isEmpty()) return@combine emptyList<Movie>()
+        if (items.isEmpty()) return@combine emptyList()
         val search = filters.search
         val tab = filters.tab
         val sort = filters.sort
@@ -161,7 +159,7 @@ class MovieViewModel @Inject constructor(
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val movieTagCounts: StateFlow<Map<String, Int>> = repository.allMovies
-        .debounce(500L)
+        .debounce(500.milliseconds)
         .map { items ->
             val counts = mutableMapOf<String, Int>()
             items.forEach { item ->
@@ -180,9 +178,6 @@ class MovieViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
     val allMovies: StateFlow<List<Movie>> = repository.allMovies
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-    val totalMoviesCount: StateFlow<Int> = offlineFilteredMovies
-        .map { it.size }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
     val movieAvailableTags: StateFlow<List<String>> = repository.allMovies
         .debounce(500.milliseconds)
         .map { items ->

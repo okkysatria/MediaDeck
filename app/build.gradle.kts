@@ -98,17 +98,13 @@ dependencies {
   implementation(libs.androidx.hilt.navigation.compose)
   implementation(libs.androidx.security.crypto)
   implementation(libs.androidx.compose.material3.adaptive.navigation.suite)
-  testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)
-  testImplementation(libs.androidx.junit)
   testImplementation(libs.junit)
   testImplementation(libs.kotlinx.coroutines.test)
   testImplementation(libs.robolectric)
   testImplementation(libs.roborazzi)
   testImplementation(libs.roborazzi.compose)
   testImplementation(libs.roborazzi.junit.rule)
-  androidTestImplementation(platform(libs.androidx.compose.bom))
-  androidTestImplementation(libs.androidx.compose.ui.test.junit4)
   androidTestImplementation(libs.androidx.espresso.core)
   androidTestImplementation(libs.androidx.junit)
   androidTestImplementation(libs.androidx.runner)
@@ -128,6 +124,7 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
 }
 
 tasks.register<Copy>("copyDebugApkAsMediaDeck") {
+  description = "Copies the debug APK to the MediaDeck output folder."
   dependsOn("packageDebug")
   from(layout.buildDirectory.file("outputs/apk/debug/app-debug.apk"))
   into(layout.buildDirectory.dir("outputs/apk/MediaDeck"))

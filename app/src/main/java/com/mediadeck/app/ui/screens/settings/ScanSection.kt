@@ -79,7 +79,7 @@ private fun rememberFolderPicker(
                 it,
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
             )
-        } catch (e: Exception) {
+        } catch (_: Exception) {
         }
         scannerViewModel.saveLibraryFolder(context, it.toString(), type)
         scannerViewModel.runFolderScan(it.toString(), type)
@@ -608,7 +608,7 @@ private fun cleanFolderDisplayPath(uriString: String): String {
                 }
             }
         }
-    } catch (e: Exception) {
+    } catch (_: Exception) {
         uriString
     }
 }
@@ -661,7 +661,7 @@ private fun FolderGroup(
                         } else {
                             try {
                                 uri.toUri().lastPathSegment?.substringAfterLast(":")?.substringAfterLast("/") ?: uri
-                            } catch (e: Exception) { uri }
+                            } catch (_: Exception) { uri }
                         }
                         val cleanPath = cleanFolderDisplayPath(uri)
                         Row(verticalAlignment = Alignment.CenterVertically) {

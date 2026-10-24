@@ -7,14 +7,11 @@ import android.os.ParcelFileDescriptor
 import android.util.Log
 import com.mediadeck.app.data.AppRepository
 import com.mediadeck.app.util.cache.SimpleDiskLruCache
-import org.codelibs.jcifs.smb.impl.SmbFile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.withPermit
-import java.io.File
-import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
@@ -33,7 +30,6 @@ class SmbContentProvider : ContentProvider() {
     @InstallIn(SingletonComponent::class)
     interface ProviderEntryPoint {
         fun appRepository(): AppRepository
-        fun settingsDao(): com.mediadeck.app.data.settings.SettingsDao
     }
     override fun onCreate(): Boolean {
         val context = context ?: return false
