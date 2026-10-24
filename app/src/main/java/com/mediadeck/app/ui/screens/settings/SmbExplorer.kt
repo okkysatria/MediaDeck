@@ -397,10 +397,10 @@ fun SmbExplorer(
                                             )
                                         }
                                         Column(modifier = Modifier.weight(1f)) {
-                                            Text(item.name, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, color = DeckTextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Text(item.name, fontWeight = FontWeight.Medium, fontSize = 14.sp, color = DeckTextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                             Text(
                                                 android.text.format.Formatter.formatShortFileSize(context, item.size),
-                                                fontSize = 14.sp,
+                                                fontSize = 12.sp,
                                                 color = DeckTextSecondary,
                                             )
                                         }
@@ -430,7 +430,7 @@ fun SmbExplorer(
                             Text(
                                 displayLocation.ifEmpty { activeShare },
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 17.sp,
+                                fontSize = 15.sp,
                                 color = DeckTextPrimary,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
@@ -454,7 +454,7 @@ fun SmbExplorer(
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Text(
                                     t("Open a folder to scan", "Buka folder untuk dipindai"),
-                                    fontSize = 17.sp,
+                                    fontSize = 14.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = DeckTextSecondary,
                                 )
