@@ -190,14 +190,7 @@ fun ComicsScreen(
     val heroComic by viewModel.heroComic.collectAsState()
     val countFormat = remember { NumberFormat.getIntegerInstance() }
 
-    var openMenuCount by remember { mutableIntStateOf(0) }
-    val onMenuVisibilityChange = remember<(Boolean) -> Unit> {
-        { open -> openMenuCount = (openMenuCount + if (open) 1 else -1).coerceAtLeast(0) }
-    }
-    val scrimAlpha = animateFloatAsState(
-        targetValue = if (openMenuCount > 0) MenuScrimAlpha else 0f,
-        label = "card_menu_scrim",
-    )
+    val onMenuVisibilityChange: (Boolean) -> Unit = remember { {} }
 
     var isSearchingLocal by rememberSaveable { mutableStateOf(false) }
     val isSearching = isSearchingLocal || search.isNotEmpty()
@@ -260,11 +253,6 @@ fun ComicsScreen(
     }
 
     Scaffold(
-        modifier = Modifier.drawWithContent {
-            drawContent()
-            val a = scrimAlpha.value
-            if (a > 0f) drawRect(Color.Black.copy(alpha = a))
-        },
         topBar = {
             if (isMultiSelect || isSearching) {
                 TopAppBar(
@@ -968,12 +956,7 @@ private fun ComicMoreButton(
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
 
-    if (showMenu) {
-        DisposableEffect(Unit) {
-            onMenuVisibilityChange(true)
-            onDispose { onMenuVisibilityChange(false) }
-        }
-    }
+
 
     if (showInfoDialog) {
         ComicInfoDialog(comic = comic, onDismiss = { showInfoDialog = false })
@@ -1475,7 +1458,6 @@ private fun InfoRow(label: String, value: String) {
 }
 
 
-private const val MenuScrimAlpha = 0.55f
 private val SelectedListItemColor: Color
     @Composable
     get() = DeckAccentPillBg
