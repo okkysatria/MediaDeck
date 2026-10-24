@@ -98,10 +98,7 @@ fun GeneralSection(
                     PickerOption(t("Dark", "Gelap"), settings.theme == "dark", { viewModel.updateTheme("dark") }),
                 ),
             )
-        }
-
-        SettingsSectionHeader(t("App Behavior", "Perilaku Aplikasi"))
-        SettingsCard {
+            SettingsDivider()
             SettingsToggleRow(
                 title = t("Stay Awake", "Layar Tetap Aktif"),
                 icon = Icons.Default.LightMode,
