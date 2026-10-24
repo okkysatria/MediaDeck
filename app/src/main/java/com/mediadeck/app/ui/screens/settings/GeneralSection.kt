@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.CropFree
@@ -28,7 +29,6 @@ import androidx.compose.material.icons.filled.TextFormat
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.ViewCarousel
 import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -100,8 +100,87 @@ fun GeneralSection(
             )
         }
 
+        SettingsSectionHeader(t("App Behavior", "Perilaku Aplikasi"))
+        SettingsCard {
+            SettingsToggleRow(
+                title = t("Stay Awake", "Layar Tetap Aktif"),
+                icon = Icons.Default.LightMode,
+                checked = settings.keepScreenOn,
+                onCheckedChange = viewModel::setKeepScreenOn,
+                testTag = "keep_screen_on_switch",
+            )
+            SettingsDivider()
+            SettingsToggleRow(
+                title = t("Show Side Scrollbar", "Tampilkan Scrollbar Samping"),
+                icon = Icons.Default.FormatLineSpacing,
+                checked = settings.showSideScrollbar,
+                onCheckedChange = viewModel::setShowSideScrollbar,
+            )
+            SettingsDivider()
+            SettingsPickerRow(
+                title = t("Network Buffer", "Buffer Jaringan"),
+                selectedLabel = "${settings.smbNetworkCachingMs / 1000}s (${settings.smbNetworkCachingMs} ms)",
+                icon = Icons.Default.Tune,
+                options = listOf(1000, 2000, 3000, 5000, 10000, 20000, 30000).map { ms ->
+                    PickerOption("${ms / 1000}s ($ms ms)", settings.smbNetworkCachingMs == ms, { viewModel.setSmbNetworkCachingMs(ms) })
+                },
+            )
+        }
 
-        SettingsSectionHeader(t("Library View", "Tampilan Pustaka"))
+        SettingsSectionHeader(t("Comic Reader", "Pembaca Komik"))
+        SettingsCard {
+            SettingsPickerRow(
+                title = t("Reading Mode", "Mode Membaca"),
+                selectedLabel = if (settings.defaultReaderMode == "vertical") t("Vertical", "Vertikal") else t("Horizontal", "Horizontal"),
+                icon = Icons.Default.ImportContacts,
+                options = listOf(
+                    PickerOption(t("Vertical (Webtoon)", "Vertikal (Webtoon)"), settings.defaultReaderMode == "vertical", { viewModel.setDefaultReaderMode("vertical") }),
+                    PickerOption(t("Horizontal (Manga)", "Horizontal (Manga)"), settings.defaultReaderMode != "vertical", { viewModel.setDefaultReaderMode("horizontal") }),
+                ),
+            )
+            SettingsDivider()
+            SettingsPickerRow(
+                title = t("Page Transition", "Transisi Halaman"),
+                selectedLabel = when (settings.comicPageTransition) {
+                    "slide" -> "Slide"
+                    "fade" -> "Fade"
+                    else -> "Page Curl"
+                },
+                icon = Icons.Default.ViewCarousel,
+                options = listOf("curl" to "Page Curl", "slide" to "Slide", "fade" to "Fade").map { (value, label) ->
+                    val selected = when (settings.comicPageTransition) {
+                        "slide", "fade" -> settings.comicPageTransition == value
+                        else -> value == "curl"
+                    }
+                    PickerOption(label, selected, { viewModel.setComicPageTransition(value) })
+                },
+            )
+            SettingsDivider()
+            SettingsPickerRow(
+                title = t("Page Spacing", "Jarak Halaman"),
+                selectedLabel = settings.verticalPageGap.replaceFirstChar { it.uppercase() },
+                icon = Icons.Default.FormatLineSpacing,
+                options = listOf("none", "small", "medium").map { gap ->
+                    PickerOption(gap.replaceFirstChar { it.uppercase() }, settings.verticalPageGap == gap, { viewModel.setVerticalPageGap(gap) })
+                },
+            )
+            SettingsDivider()
+            SettingsToggleRow(
+                title = t("Auto-hide UI", "Sembunyikan UI Otomatis"),
+                icon = Icons.Default.VisibilityOff,
+                checked = settings.autoHideReaderUi,
+                onCheckedChange = viewModel::setAutoHideReaderUi,
+            )
+            SettingsDivider()
+            SettingsToggleRow(
+                title = t("Volume Key Navigation", "Navigasi Tombol Volume"),
+                icon = Icons.AutoMirrored.Filled.VolumeUp,
+                checked = settings.readerVolumeKeysNavigation,
+                onCheckedChange = viewModel::setReaderVolumeKeysNavigation,
+            )
+        }
+
+        SettingsSectionHeader(t("Gallery View", "Tampilan Galeri"))
         SettingsCard {
             SettingsPickerRow(
                 title = t("Display Mode", "Mode Tampilan"),
@@ -163,80 +242,6 @@ fun GeneralSection(
             }
         }
 
-
-        SettingsSectionHeader(t("App Behavior", "Perilaku Aplikasi"))
-        SettingsCard {
-            SettingsToggleRow(
-                title = t("Stay Awake", "Layar Tetap Aktif"),
-                icon = Icons.Default.LightMode,
-                checked = settings.keepScreenOn,
-                onCheckedChange = viewModel::setKeepScreenOn,
-                testTag = "keep_screen_on_switch",
-            )
-            SettingsDivider()
-            SettingsToggleRow(
-                title = t("Show Side Scrollbar", "Tampilkan Scrollbar Samping"),
-                icon = Icons.Default.FormatLineSpacing,
-                checked = settings.showSideScrollbar,
-                onCheckedChange = viewModel::setShowSideScrollbar,
-            )
-        }
-
-
-        SettingsSectionHeader(t("Comic Reader", "Pembaca Komik"))
-        SettingsCard {
-            SettingsPickerRow(
-                title = t("Reading Mode", "Mode Membaca"),
-                selectedLabel = if (settings.defaultReaderMode == "vertical") t("Vertical", "Vertikal") else t("Horizontal", "Horizontal"),
-                icon = Icons.Default.ImportContacts,
-                options = listOf(
-                    PickerOption(t("Vertical (Webtoon)", "Vertikal (Webtoon)"), settings.defaultReaderMode == "vertical", { viewModel.setDefaultReaderMode("vertical") }),
-                    PickerOption(t("Horizontal (Manga)", "Horizontal (Manga)"), settings.defaultReaderMode != "vertical", { viewModel.setDefaultReaderMode("horizontal") }),
-                ),
-            )
-            SettingsDivider()
-            SettingsPickerRow(
-                title = t("Page Transition", "Transisi Halaman"),
-                selectedLabel = when (settings.comicPageTransition) {
-                    "slide" -> "Slide"
-                    "fade" -> "Fade"
-                    else -> "Page Curl"
-                },
-                icon = Icons.Default.ViewCarousel,
-                options = listOf("curl" to "Page Curl", "slide" to "Slide", "fade" to "Fade").map { (value, label) ->
-                    val selected = when (settings.comicPageTransition) {
-                        "slide", "fade" -> settings.comicPageTransition == value
-                        else -> value == "curl"
-                    }
-                    PickerOption(label, selected, { viewModel.setComicPageTransition(value) })
-                },
-            )
-            SettingsDivider()
-            SettingsPickerRow(
-                title = t("Page Spacing", "Jarak Halaman"),
-                selectedLabel = settings.verticalPageGap.replaceFirstChar { it.uppercase() },
-                icon = Icons.Default.FormatLineSpacing,
-                options = listOf("none", "small", "medium").map { gap ->
-                    PickerOption(gap.replaceFirstChar { it.uppercase() }, settings.verticalPageGap == gap, { viewModel.setVerticalPageGap(gap) })
-                },
-            )
-            SettingsDivider()
-            SettingsToggleRow(
-                title = t("Auto-hide UI", "Sembunyikan UI Otomatis"),
-                icon = Icons.Default.VisibilityOff,
-                checked = settings.autoHideReaderUi,
-                onCheckedChange = viewModel::setAutoHideReaderUi,
-            )
-            SettingsDivider()
-            SettingsToggleRow(
-                title = t("Volume Key Navigation", "Navigasi Tombol Volume"),
-                icon = Icons.Default.VolumeUp,
-                checked = settings.readerVolumeKeysNavigation,
-                onCheckedChange = viewModel::setReaderVolumeKeysNavigation,
-            )
-        }
-
-
         SettingsSectionHeader(t("Video Player", "Pemutar Video"))
         SettingsCard {
             SettingsPickerRow(
@@ -286,6 +291,50 @@ fun GeneralSection(
             )
         }
 
+        SettingsSectionHeader(t("Scanner", "Pemindaian"))
+        SettingsCard {
+            SettingsToggleRow(
+                title = t("Scan on Startup", "Pindai Saat Buka"),
+                icon = Icons.Default.Refresh,
+                checked = settings.autoScanOnStart,
+                onCheckedChange = viewModel::setAutoScanOnStart,
+            )
+            SettingsDivider()
+            SettingsToggleRow(
+                title = t("Skip Duplicates", "Lewati Duplikat"),
+                icon = Icons.Default.ContentCopy,
+                checked = settings.skipDuplicateScan,
+                onCheckedChange = viewModel::setSkipDuplicateScan,
+            )
+            SettingsDivider()
+            SettingsToggleRow(
+                title = t("Video Thumbnails", "Thumbnail Video"),
+                icon = Icons.Default.Movie,
+                checked = settings.videoThumbnails,
+                onCheckedChange = viewModel::setVideoThumbnails,
+            )
+            SettingsDivider()
+            SettingsToggleRow(
+                title = t("Floating Scan Indicator", "Indikator Pindai Melayang"),
+                icon = Icons.Default.NotificationsActive,
+                checked = settings.floatingScanStatus,
+                onCheckedChange = viewModel::setFloatingScanStatus,
+            )
+            SettingsDivider()
+            SettingsToggleRow(
+                title = t("Local Scan Priority", "Prioritas Pindai Lokal"),
+                icon = Icons.Default.PhoneAndroid,
+                checked = settings.prioritizeLocalScan,
+                onCheckedChange = viewModel::setPrioritizeLocalScan,
+            )
+            SettingsDivider()
+            SettingsToggleRow(
+                title = t("Hide Offline SMB", "Sembunyikan SMB Offline"),
+                icon = Icons.Default.CloudOff,
+                checked = settings.hideOfflineSmb,
+                onCheckedChange = viewModel::setHideOfflineSmb,
+            )
+        }
 
         SettingsSectionHeader(t("Filename Parsing", "Format Nama Berkas"))
         SettingsCard {
@@ -463,65 +512,6 @@ fun GeneralSection(
                 checked = settings.lowercaseTags,
                 onCheckedChange = viewModel::setLowercaseTags,
                 testTag = "lowercase_tags_switch",
-            )
-        }
-
-
-        SettingsSectionHeader(t("Scanning", "Pemindaian"))
-        SettingsCard {
-            SettingsToggleRow(
-                title = t("Scan on Startup", "Pindai Saat Buka"),
-                icon = Icons.Default.Refresh,
-                checked = settings.autoScanOnStart,
-                onCheckedChange = viewModel::setAutoScanOnStart,
-            )
-            SettingsDivider()
-            SettingsToggleRow(
-                title = t("Skip Duplicates", "Lewati Duplikat"),
-                icon = Icons.Default.ContentCopy,
-                checked = settings.skipDuplicateScan,
-                onCheckedChange = viewModel::setSkipDuplicateScan,
-            )
-            SettingsDivider()
-            SettingsToggleRow(
-                title = t("Video Thumbnails", "Thumbnail Video"),
-                icon = Icons.Default.Movie,
-                checked = settings.videoThumbnails,
-                onCheckedChange = viewModel::setVideoThumbnails,
-            )
-            SettingsDivider()
-            SettingsToggleRow(
-                title = t("Floating Scan Indicator", "Indikator Pindai Melayang"),
-                icon = Icons.Default.NotificationsActive,
-                checked = settings.floatingScanStatus,
-                onCheckedChange = viewModel::setFloatingScanStatus,
-            )
-            SettingsDivider()
-            SettingsToggleRow(
-                title = t("Local Scan Priority", "Prioritas Pindai Lokal"),
-                icon = Icons.Default.PhoneAndroid,
-                checked = settings.prioritizeLocalScan,
-                onCheckedChange = viewModel::setPrioritizeLocalScan,
-            )
-            SettingsDivider()
-            SettingsToggleRow(
-                title = t("Hide Offline SMB", "Sembunyikan SMB Offline"),
-                icon = Icons.Default.CloudOff,
-                checked = settings.hideOfflineSmb,
-                onCheckedChange = viewModel::setHideOfflineSmb,
-            )
-        }
-
-
-        SettingsSectionHeader(t("Network Streaming (SMB)", "Streaming Jaringan (SMB)"))
-        SettingsCard {
-            SettingsPickerRow(
-                title = t("Network Buffer", "Buffer Jaringan"),
-                selectedLabel = "${settings.smbNetworkCachingMs / 1000}s (${settings.smbNetworkCachingMs} ms)",
-                icon = Icons.Default.Tune,
-                options = listOf(1000, 2000, 3000, 5000, 10000, 20000, 30000).map { ms ->
-                    PickerOption("${ms / 1000}s ($ms ms)", settings.smbNetworkCachingMs == ms, { viewModel.setSmbNetworkCachingMs(ms) })
-                },
             )
         }
     }
