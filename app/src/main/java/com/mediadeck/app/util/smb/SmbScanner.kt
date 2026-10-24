@@ -283,7 +283,6 @@ object SmbScanner {
         if (folderGallery.isNotEmpty() || folderMovies.isNotEmpty()) {
             onItemsFound?.invoke(emptyList(), folderGallery, folderMovies)
         }
-        onProgress(parentFolderName)
         if (subDirs.isNotEmpty()) {
             withContext(Dispatchers.IO) {
                 subDirs.chunked(6).map { batch ->
@@ -404,7 +403,6 @@ object SmbScanner {
                     if (MediaUtils.isImageExt(ext)) {
                         val parsed = LocalScanner.parseNameMetadata(name, settings)
                         val mType = MediaUtils.getMimeTypeFromExt(ext)
-                        onProgress(parentFolderName)
                         val item = GalleryItem(
                             uri = cpUri,
                             name = parsed.title,
@@ -515,7 +513,6 @@ object SmbScanner {
                     onProgress(name)
                     if (MediaUtils.isVideoFile(name)) {
                         val parsed = LocalScanner.parseNameMetadata(name, settings)
-                        onProgress(parentFolderName)
                         val movieItem = Movie(
                             title = parsed.title,
                             uri = cpUri,

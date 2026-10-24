@@ -62,6 +62,20 @@ class ScannerViewModel @Inject constructor(
     val navigationRequest: SharedFlow<String> = _navigationRequest.asSharedFlow()
     @Volatile private var isScanCancelled = false
     @Volatile private var isForceStopped = false
+    @Volatile private var lastProgressUpdateTime = 0L
+
+    private fun updateScanProgress(pathOrName: String, lang: String) {
+        val now = System.currentTimeMillis()
+        if (now - lastProgressUpdateTime >= 250L) {
+            lastProgressUpdateTime = now
+            val cleanName = pathOrName.trimEnd('/', '\\').substringAfterLast('/').ifBlank { pathOrName }
+            _scanProgress.value = com.mediadeck.app.util.i18n.translate(
+                lang,
+                "Scanning $cleanName",
+                "Memindai $cleanName",
+            )
+        }
+    }
     init {
         viewModelScope.launch {
             repository.appSettings.collect { settings ->
@@ -70,15 +84,25 @@ class ScannerViewModel @Inject constructor(
                 _movieFolders.value = settings.movieFolders.split(",").filter { it.isNotEmpty() }.distinct()
             }
         }
+        var lastNotificationTime = 0L
         viewModelScope.launch {
-            _scanProgress.debounce(500L).collect { progress ->
+            _scanProgress.collect { progress ->
                 ScannerStateManager.updateProgress(progress)
                 if (_isScanActive.value && progress != null) {
-                    com.mediadeck.app.service.MediaScannerService.startService(appContext, progress)
+                    val now = System.currentTimeMillis()
+                    if (now - lastNotificationTime >= 1000L) {
+                        lastNotificationTime = now
+                        com.mediadeck.app.service.MediaScannerService.startService(appContext, progress)
+                    }
                 }
             }
         }
-        _isScanActive.onEach { ScannerStateManager.setScanActive(it) }.launchIn(viewModelScope)
+        _isScanActive.onEach { active ->
+            ScannerStateManager.setScanActive(active)
+            if (!active) {
+                com.mediadeck.app.service.MediaScannerService.stopService(appContext)
+            }
+        }.launchIn(viewModelScope)
         _isScanPaused.onEach { ScannerStateManager.setScanPaused(it) }.launchIn(viewModelScope)
         _isManualRefreshing.onEach { ScannerStateManager.setManualRefreshing(it) }.launchIn(viewModelScope)
     }
@@ -253,13 +277,7 @@ class ScannerViewModel @Inject constructor(
                                                         context = appContext,
                                                         settings = settings,
                                                         scanType = cat,
-                                                        onProgress = { path ->
-                                                            _scanProgress.value = com.mediadeck.app.util.i18n.translate(
-                                                                lang,
-                                                                "Scanning $path",
-                                                                "Memindai $path",
-                                                            )
-                                                        },
+                                                        onProgress = { path -> updateScanProgress(path, lang) },
                                                         checkControl = checkControl,
                                                         knownUris = knownUris,
                                                         rootUrl = uri,
@@ -273,13 +291,7 @@ class ScannerViewModel @Inject constructor(
                                                         folderPathOrUri = uri,
                                                         settings = settings,
                                                         scanType = cat,
-                                                        onProgress = { path ->
-                                                            _scanProgress.value = com.mediadeck.app.util.i18n.translate(
-                                                                lang,
-                                                                "Scanning $path",
-                                                                "Memindai $path",
-                                                            )
-                                                        },
+                                                        onProgress = { path -> updateScanProgress(path, lang) },
                                                         checkControl = checkControl,
                                                         knownUris = knownUris,
                                                         folderCache = folderCache,
@@ -427,7 +439,6 @@ class ScannerViewModel @Inject constructor(
                     viewModelScope.launch(Dispatchers.IO) { MediaProcessingEngine.enqueue(MediaProcessingEngine.ProcessingTask(context, finalItem.uri, id, settings, false, "gallery") { _ -> }) }
                 }
             }
-            _scanProgress.value = com.mediadeck.app.util.i18n.translate(lang, "Scanning $cat (${_galleryCount.value})", "Memindai $cat (${_galleryCount.value})")
         }
         if (results.first.isNotEmpty()) {
             val cat = com.mediadeck.app.util.i18n.translate(lang, "Comic", "Komik")
@@ -472,7 +483,6 @@ class ScannerViewModel @Inject constructor(
                 repository.insertComics(toInsert)
                 toInsert.forEach { existingComics[it.folderUri] = it }
             }
-            _scanProgress.value = com.mediadeck.app.util.i18n.translate(lang, "Scanning $cat (${_comicCount.value})", "Memindai $cat (${_comicCount.value})")
         }
         if (results.third.isNotEmpty()) {
             val cat = com.mediadeck.app.util.i18n.translate(lang, "Movie", "Film")
@@ -505,7 +515,6 @@ class ScannerViewModel @Inject constructor(
                     viewModelScope.launch(Dispatchers.IO) { MediaProcessingEngine.enqueue(MediaProcessingEngine.ProcessingTask(context, finalMovie.uri, id, settings, false, "movie") { _ -> }) }
                 }
             }
-            _scanProgress.value = com.mediadeck.app.util.i18n.translate(lang, "Scanning $cat (${_movieCount.value})", "Memindai $cat (${_movieCount.value})")
         }
     }
     fun togglePauseScan() { _isScanPaused.value = !_isScanPaused.value }
@@ -608,13 +617,7 @@ class ScannerViewModel @Inject constructor(
                                 context = appContext,
                                 settings = settings,
                                 scanType = scanType,
-                                onProgress = { path ->
-                                    _scanProgress.value = com.mediadeck.app.util.i18n.translate(
-                                        lang,
-                                        "Scanning $path",
-                                        "Memindai $path",
-                                    )
-                                },
+                                onProgress = { path -> updateScanProgress(path, lang) },
                                 checkControl = checkControl,
                                 knownUris = knownUris,
                                 rootUrl = folderUriStr,
@@ -628,13 +631,7 @@ class ScannerViewModel @Inject constructor(
                                 folderPathOrUri = folderUriStr,
                                 settings = settings,
                                 scanType = scanType,
-                                onProgress = { path ->
-                                    _scanProgress.value = com.mediadeck.app.util.i18n.translate(
-                                        lang,
-                                        "Scanning $path",
-                                        "Memindai $path",
-                                    )
-                                },
+                                onProgress = { path -> updateScanProgress(path, lang) },
                                 checkControl = checkControl,
                                 knownUris = knownUris,
                                 folderCache = emptyMap(),

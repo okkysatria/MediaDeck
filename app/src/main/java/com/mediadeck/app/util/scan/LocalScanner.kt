@@ -170,7 +170,6 @@ object LocalScanner {
             updatedFolderCache[folderUriStr] = currentMod
             return
         }
-        onProgress?.invoke(parentFolderName)
         val children = listChildrenFast(context, treeUri, parentDocId)
         val files = children.filter { !it.mimeType.equals(other = DocumentsContract.Document.MIME_TYPE_DIR, ignoreCase = true) }
         val dirs = children.filter { it.mimeType.equals(other = DocumentsContract.Document.MIME_TYPE_DIR, ignoreCase = true) }
@@ -249,7 +248,6 @@ object LocalScanner {
             updatedFolderCache[folderUriStr] = currentMod
             return
         }
-        onProgress?.invoke(parentFolderName)
         val children = listChildrenFast(context, treeUri, parentDocId)
         val files = children.filter { !it.mimeType.equals(other = DocumentsContract.Document.MIME_TYPE_DIR, ignoreCase = true) }
         val dirs = children.filter { it.mimeType.equals(other = DocumentsContract.Document.MIME_TYPE_DIR, ignoreCase = true) }
@@ -471,7 +469,6 @@ object LocalScanner {
             onItemsFound?.invoke(folderComics, folderGallery, folderMovies)
         }
         updatedFolderCache[folderUriStr] = currentMod
-        onProgress?.invoke(parentFolderName)
         if (subDirs.isNotEmpty()) {
             coroutineScope {
                 subDirs.chunked(4).forEach { batch ->
@@ -605,7 +602,6 @@ object LocalScanner {
             onItemsFound?.invoke(folderComics, folderGallery, folderMovies)
         }
         updatedFolderCache[folderUri] = currentMod
-        onProgress?.invoke(parentFolderName)
         if (subdirs.isNotEmpty()) {
             coroutineScope {
                 subdirs.chunked(4).forEach { batch ->
@@ -675,7 +671,6 @@ object LocalScanner {
         onItemsFound: (suspend (List<Comic>, List<GalleryItem>, List<Movie>) -> Unit)? = null,
     ) {
         checkControl()
-        onProgress?.invoke(dir.name)
         val files = dir.listFiles() ?: return
         val foundItems = mutableListOf<GalleryItem>()
         for (file in files) {
@@ -722,7 +717,6 @@ object LocalScanner {
         onItemsFound: (suspend (List<Comic>, List<GalleryItem>, List<Movie>) -> Unit)? = null,
     ) {
         checkControl()
-        onProgress?.invoke(dir.name)
         val files = dir.listFiles() ?: return
         val foundMovies = mutableListOf<Movie>()
         for (file in files) {
