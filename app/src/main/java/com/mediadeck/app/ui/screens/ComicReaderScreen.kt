@@ -126,6 +126,7 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.mediadeck.app.data.comic.ComicPage
 import com.mediadeck.app.data.settings.AppSettings
+import com.mediadeck.app.ui.components.DraggableListScrollbar
 import com.mediadeck.app.ui.components.ZoomableMediaBox
 import com.mediadeck.app.util.i18n.t
 import com.mediadeck.app.util.scan.ScannerStateManager
@@ -870,102 +871,17 @@ fun VerticalReader(
         }
 
 
-        var isDraggingScrollbar by remember { mutableStateOf(false) }
-        val scrollbarVisible = showScrollbar
-        LaunchedEffect(showScrollbar) {
-            if (!showScrollbar) isDraggingScrollbar = false
-        }
-        val scrollbarAlpha by animateFloatAsState(
-            targetValue = if (scrollbarVisible) 1f else 0f,
-            animationSpec = tween(durationMillis = 250),
-            label = "scrollbar_alpha",
-        )
-        if (scale <= 1.05f && pages.isNotEmpty() && (showScrollbar || scrollbarAlpha > 0.01f)) {
-            val totalCount = pages.size.coerceAtLeast(1)
-            val progress by remember(listState, totalCount) {
-                derivedStateOf {
-                    if (!listState.canScrollForward) {
-                        1f
-                    } else if (!listState.canScrollBackward && listState.firstVisibleItemScrollOffset == 0) {
-                        0f
-                    } else {
-                        val maxIndex = (totalCount - 1).coerceAtLeast(1)
-                        val itemSize = (listState.layoutInfo.visibleItemsInfo.firstOrNull()?.size ?: DEFAULT_PAGE_HEIGHT_PX).coerceAtLeast(1)
-                        val itemProgress = (listState.firstVisibleItemScrollOffset.toFloat() / itemSize).coerceIn(0f, 1f)
-                        ((listState.firstVisibleItemIndex.toFloat() + itemProgress) / maxIndex.toFloat()).coerceIn(0f, 1f)
-                    }
-                }
-            }
+        if (scale <= 1.05f && pages.isNotEmpty() && (settings.showSideScrollbar || showScrollbar)) {
             val compactHeight = maxHeight < 600.dp
-            val seekScope = rememberCoroutineScope()
-            Box(
+            DraggableListScrollbar(
+                listState = listState,
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
-                    .fillMaxHeight()
                     .padding(
-                        top = if (compactHeight) 64.dp else 110.dp,
-                        bottom = if (compactHeight) 64.dp else 154.dp,
-                        end = 6.dp,
-                    )
-                    .width(36.dp)
-                    .graphicsLayer { alpha = scrollbarAlpha },
-                contentAlignment = Alignment.TopCenter,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxHeight()
-                        .width(4.dp)
-                        .background(Color.White.copy(alpha = 0.3f), RoundedCornerShape(2.dp))
-                )
-                BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                    val thumbHeight = 56.dp
-                    val maxOffset = maxHeight - thumbHeight
-                    val currentOffset = maxOffset * progress
-                    val thumbPx = with(density) { thumbHeight.toPx() }
-                    val trackPx = with(density) { maxHeight.toPx() }
-                    fun seekTo(y: Float) {
-                        val fraction = ((y - thumbPx / 2f) / (trackPx - thumbPx).coerceAtLeast(1f)).coerceIn(0f, 1f)
-                        val target = fraction * totalCount
-                        val idx = target.toInt().coerceIn(0, totalCount - 1)
-                        val within = (target - idx).coerceIn(0f, 1f)
-                        val itemSize = listState.layoutInfo.visibleItemsInfo.firstOrNull()?.size ?: DEFAULT_PAGE_HEIGHT_PX
-                        seekScope.launch { listState.scrollToItem(idx, (within * itemSize).toInt()) }
-                    }
-
-                    val touchModifier = if (scrollbarVisible) {
-                        Modifier
-                            .fillMaxSize()
-                            .pointerInput(totalCount, trackPx) {
-                                detectTapGestures(onTap = { seekTo(it.y) })
-                            }
-                            .pointerInput(totalCount, trackPx) {
-                                detectVerticalDragGestures(
-                                    onDragStart = { offset ->
-                                        isDraggingScrollbar = true
-                                        seekTo(offset.y)
-                                    },
-                                    onDragEnd = { isDraggingScrollbar = false },
-                                    onDragCancel = { isDraggingScrollbar = false },
-                                    onVerticalDrag = { change, _ ->
-                                        change.consume()
-                                        seekTo(change.position.y)
-                                    },
-                                )
-                            }
-                    } else {
-                        Modifier.fillMaxSize()
-                    }
-                    Box(modifier = touchModifier) {
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.TopCenter)
-                                .offset(y = currentOffset)
-                                .size(width = if (isDraggingScrollbar) 24.dp else 20.dp, height = thumbHeight)
-                                .background(ReaderAccent, RoundedCornerShape(12.dp))
-                        )
-                    }
-                }
-            }
+                        top = if (compactHeight) 64.dp else 100.dp,
+                        bottom = if (compactHeight) 64.dp else 100.dp,
+                    ),
+            )
         }
     }
 }

@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
 import androidx.compose.foundation.rememberScrollState
@@ -711,6 +712,20 @@ private fun DraggableScrollbar(source: ScrollbarSource, modifier: Modifier = Mod
             )
         }
     }
+}
+
+@Composable
+fun DraggableListScrollbar(listState: LazyListState, modifier: Modifier = Modifier) {
+    val source = remember(listState) {
+        object : ScrollbarSource {
+            override val totalItems: Int get() = listState.layoutInfo.totalItemsCount
+            override val visibleCount: Int get() = listState.layoutInfo.visibleItemsInfo.size
+            override val firstVisibleIndex: Int get() = listState.firstVisibleItemIndex
+            override val isScrolling: Boolean get() = listState.isScrollInProgress
+            override suspend fun scrollTo(index: Int) = listState.scrollToItem(index)
+        }
+    }
+    DraggableScrollbar(source, modifier)
 }
 
 @Composable
