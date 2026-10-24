@@ -75,6 +75,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -1088,14 +1091,13 @@ private fun GestureIndicatorOverlay(
         exit = fadeOut() + scaleOut(targetScale = 0.85f),
         modifier = modifier,
     ) {
-        Surface(
-            color = Color.Black.copy(alpha = 0.6f),
-            shape = RoundedCornerShape(20.dp),
+        Box(
             modifier = Modifier.sizeIn(minWidth = 100.dp, minHeight = 100.dp),
+            contentAlignment = Alignment.Center,
         ) {
             val controlColor = Color.White
             Column(
-                modifier = Modifier.padding(20.dp),
+                modifier = Modifier.padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
@@ -1113,7 +1115,15 @@ private fun GestureIndicatorOverlay(
                     }
                     GestureType.SEEK -> {
                         val sign = if (seekDeltaSeconds >= 0) "+" else ""
-                        Text(formatTime(seekTimeMs), color = controlColor, fontWeight = FontWeight.Black, fontSize = 24.sp)
+                        Text(
+                            formatTime(seekTimeMs),
+                            color = controlColor,
+                            fontWeight = FontWeight.Black,
+                            fontSize = 26.sp,
+                            style = LocalTextStyle.current.copy(
+                                shadow = Shadow(color = Color.Black.copy(alpha = 0.85f), offset = Offset(0f, 2f), blurRadius = 4f),
+                            ),
+                        )
                         Spacer(modifier = Modifier.height(4.dp))
                         Surface(
                             color = MaterialTheme.colorScheme.primary,
@@ -1150,11 +1160,19 @@ private fun GestureProgressIndicator(icon: ImageVector, percent: Int) {
     LinearProgressIndicator(
         progress = { percent / 100f },
         color = MaterialTheme.colorScheme.primary,
-        trackColor = Color.White.copy(alpha = 0.2f),
-        modifier = Modifier.width(80.dp).height(4.dp).clip(CircleShape),
+        trackColor = Color.Black.copy(alpha = 0.4f),
+        modifier = Modifier.width(90.dp).height(5.dp).clip(CircleShape),
     )
     Spacer(modifier = Modifier.height(8.dp))
-    Text("$percent%", color = controlColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+    Text(
+        "$percent%",
+        color = controlColor,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.Bold,
+        style = LocalTextStyle.current.copy(
+            shadow = Shadow(color = Color.Black.copy(alpha = 0.85f), offset = Offset(0f, 1f), blurRadius = 3f),
+        ),
+    )
 }
 private val PlayerBarColor = Color(0xFF12151A).copy(alpha = 0.92f)
 private val PlayerPanelColor = Color(0xFF121418)
