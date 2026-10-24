@@ -533,25 +533,19 @@ fun MoviesScreen(
         }
     }
     if (showMainMenu) {
-        MoviesSidePanel(
+        GallerySideSheet(
             title = t("Movies Options", "Opsi Film"),
             onDismiss = { showMainMenu = false },
         ) {
-            Text(
-                text = t("VIEW", "TAMPILAN"),
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 1.sp,
-                color = com.mediadeck.app.ui.theme.DeckTextSecondary,
-                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
+            SheetSectionLabel(t("VIEW", "TAMPILAN"))
+            SheetSegmented(
+                options = listOf("grid" to t("Grid", "Grid"), "title_only" to t("List", "Daftar")),
+                selected = if (settings.layoutMode == "title_only") "title_only" else "grid",
+                onSelect = { viewModel.setLayoutMode(it) },
             )
-            MoviesViewToggle(
-                isGrid = settings.layoutMode == "grid",
-                onSelect = { grid -> viewModel.setLayoutMode(if (grid) "grid" else "title_only") },
-            )
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(20.dp))
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                MoviesOptionRow(
+                SheetActionRow(
                     icon = Icons.Outlined.Folder,
                     label = t("Group by Folder", "Grup Folder"),
                     onClick = { viewModel.setMovieGroupedByFolder(!isGroupedByFolder) },
@@ -570,18 +564,18 @@ fun MoviesScreen(
                         )
                     },
                 )
-                MoviesOptionRow(
+                SheetActionRow(
                     icon = Icons.Outlined.FavoriteBorder,
                     label = t("Favorites", "Favorit"),
                     onClick = { viewModel.setMovieTab("favorites"); showMainMenu = false },
                 )
-                MoviesOptionRow(
+                SheetActionRow(
                     icon = Icons.Outlined.History,
                     label = t("Recently Played", "Baru Diputar"),
                     onClick = { viewModel.setMovieTab("history"); showMainMenu = false },
                 )
                 if (activeTab == "history") {
-                    MoviesOptionRow(
+                    SheetActionRow(
                         icon = Icons.Outlined.History,
                         label = t("Clear History", "Hapus Riwayat"),
                         tint = com.mediadeck.app.ui.theme.DeckBadgeRed,
@@ -589,17 +583,17 @@ fun MoviesScreen(
                         onClick = { viewModel.clearAllMovieHistory(); showMainMenu = false },
                     )
                 }
-                MoviesOptionRow(
+                SheetActionRow(
                     icon = Icons.AutoMirrored.Filled.Sort,
                     label = t("Sort By...", "Urutkan..."),
                     onClick = { showMainMenu = false; showSortDialog = true },
                 )
-                MoviesOptionRow(
+                SheetActionRow(
                     icon = Icons.Outlined.FilterAlt,
                     label = t("Filter Tags...", "Filter Label..."),
                     onClick = { isTagsPanelExpanded = !isTagsPanelExpanded; showMainMenu = false },
                 )
-                MoviesOptionRow(
+                SheetActionRow(
                     icon = Icons.Outlined.CheckCircle,
                     label = t("Select Multiple", "Pilih Banyak"),
                     onClick = { viewModel.startMovieMultiSelect(); showMainMenu = false },
@@ -618,7 +612,7 @@ fun MoviesScreen(
             "random" to t("Shuffle / Random", "Acak"),
         )
         val sortGroups = listOf(sortOptions.subList(0, 2), sortOptions.subList(2, 4), sortOptions.subList(4, 6), sortOptions.subList(6, 7))
-        MoviesSidePanel(
+        GallerySideSheet(
             title = t("Sort Video", "Urutkan Video"),
             onDismiss = { showSortDialog = false },
             onBack = { showSortDialog = false; showMainMenu = true },
@@ -970,139 +964,4 @@ private fun formatSize(bytes: Long): String {
     return "%.1f %s".format(size, units[i])
 }
 
-@Composable
-private fun MoviesSidePanel(
-    title: String,
-    onDismiss: () -> Unit,
-    onBack: (() -> Unit)? = null,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    val visibleState = remember { MutableTransitionState(false).apply { targetState = true } }
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.6f))
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismiss),
-        ) {
-            AnimatedVisibility(
-                visibleState = visibleState,
-                enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
-                modifier = Modifier.align(Alignment.CenterEnd),
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxHeight()
-                        .fillMaxWidth(0.77f)
-                        .background(MaterialTheme.colorScheme.background)
-                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = {})
-                        .statusBarsPadding()
-                        .navigationBarsPadding()
-                        .padding(horizontal = 20.dp),
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 12.dp, bottom = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        if (onBack != null) {
-                            IconButton(onClick = onBack) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                    contentDescription = t("Back", "Kembali"),
-                                    tint = com.mediadeck.app.ui.theme.DeckTextPrimary,
-                                )
-                            }
-                            Spacer(Modifier.width(4.dp))
-                        }
-                        Text(
-                            text = title,
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = com.mediadeck.app.ui.theme.DeckTextPrimary,
-                            modifier = Modifier.weight(1f),
-                        )
-                        IconButton(onClick = onDismiss) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = t("Close", "Tutup"),
-                                tint = com.mediadeck.app.ui.theme.DeckTextPrimary,
-                            )
-                        }
-                    }
-                    Column(modifier = Modifier.verticalScroll(rememberScrollState()), content = content)
-                }
-            }
-        }
-    }
-}
 
-@Composable
-private fun MoviesViewToggle(isGrid: Boolean, onSelect: (Boolean) -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(CircleShape)
-            .background(com.mediadeck.app.ui.theme.DeckSurface)
-            .padding(4.dp),
-    ) {
-        listOf(true to "Grid", false to "List").forEach { (grid, label) ->
-            val selected = grid == isGrid
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(44.dp)
-                    .clip(CircleShape)
-                    .background(if (selected) com.mediadeck.app.ui.theme.DeckAccentBlue else Color.Transparent)
-                    .clickable { onSelect(grid) },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = label,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (selected) DeckOnAccent else com.mediadeck.app.ui.theme.DeckTextPrimary,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun MoviesOptionRow(
-    icon: ImageVector,
-    label: String,
-    onClick: () -> Unit,
-    tint: Color = com.mediadeck.app.ui.theme.DeckAccentBlue,
-    labelColor: Color = com.mediadeck.app.ui.theme.DeckTextPrimary,
-    trailing: (@Composable () -> Unit)? = null,
-) {
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(16.dp),
-        color = com.mediadeck.app.ui.theme.DeckSurface,
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(52.dp),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Icon(imageVector = icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
-            Text(
-                text = label,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Medium,
-                color = labelColor,
-                modifier = Modifier.weight(1f),
-            )
-            trailing?.invoke()
-        }
-    }
-}
