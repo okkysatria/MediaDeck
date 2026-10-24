@@ -48,6 +48,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -1997,16 +1998,16 @@ private fun ReaderActionRow(icon: ImageVector, text: String, onClick: () -> Unit
         color = ReaderBar,
         modifier = Modifier
             .fillMaxWidth()
-            .height(56.dp)
+            .height(52.dp)
             .clickable(onClick = onClick),
     ) {
         Row(
             modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(imageVector = icon, contentDescription = null, tint = ReaderAccent, modifier = Modifier.size(24.dp))
-            Spacer(Modifier.width(12.dp))
-            Text(text = text, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+            Icon(imageVector = icon, contentDescription = null, tint = ReaderAccent, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.width(16.dp))
+            Text(text = text, color = Color.White, fontWeight = FontWeight.Medium, fontSize = 16.sp)
         }
     }
 }
@@ -2014,11 +2015,11 @@ private fun ReaderActionRow(icon: ImageVector, text: String, onClick: () -> Unit
 @Composable
 private fun ReaderSectionLabel(text: String) {
     Text(
-        text = text,
+        text = text.uppercase(),
         fontSize = 13.sp,
-        fontWeight = FontWeight.Bold,
+        fontWeight = FontWeight.SemiBold,
         color = ReaderMuted,
-        letterSpacing = 0.8.sp,
+        letterSpacing = 1.sp,
     )
 }
 
@@ -2027,8 +2028,7 @@ private fun <T> ReaderSegmented(options: List<Pair<T, String>>, selected: T, onS
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(52.dp)
-            .clip(RoundedCornerShape(26.dp))
+            .clip(CircleShape)
             .background(ReaderBar)
             .padding(4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -2038,8 +2038,8 @@ private fun <T> ReaderSegmented(options: List<Pair<T, String>>, selected: T, onS
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxHeight()
-                    .clip(RoundedCornerShape(22.dp))
+                    .height(44.dp)
+                    .clip(CircleShape)
                     .background(if (isSelected) ReaderAccent else Color.Transparent)
                     .clickable { onSelect(key) },
                 contentAlignment = Alignment.Center,
@@ -2047,7 +2047,7 @@ private fun <T> ReaderSegmented(options: List<Pair<T, String>>, selected: T, onS
                 Text(
                     text = label,
                     color = if (isSelected) ReaderOnAccent else Color.White,
-                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                    fontWeight = FontWeight.SemiBold,
                     fontSize = 15.sp,
                 )
             }
