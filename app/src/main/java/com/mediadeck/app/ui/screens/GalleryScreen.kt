@@ -92,6 +92,7 @@ import com.mediadeck.app.ui.theme.DeckBadgeRed
 import com.mediadeck.app.util.i18n.t
 import com.mediadeck.app.util.media.MediaFolderIdentity
 import com.mediadeck.app.util.media.MediaUtils
+import com.mediadeck.app.util.media.VideoThumbnailHelper
 import com.mediadeck.app.viewmodel.GalleryViewModel
 import com.mediadeck.app.viewmodel.ScannerViewModel
 import java.io.File
@@ -738,6 +739,7 @@ fun GalleryScreen(
                                             onStartMultiSelect = onStartMultiSelect,
                                             onDelete = onRequestDelete,
                                             onDownload = stableOnDownload,
+                                            onFavorite = { viewModel.toggleGalleryFavorite(it) },
                                         )
                                     } else {
                                         GalleryCardContent(
@@ -751,6 +753,7 @@ fun GalleryScreen(
                                             onStartMultiSelect = onStartMultiSelect,
                                             onDelete = onRequestDelete,
                                             onDownload = stableOnDownload,
+                                            onFavorite = { viewModel.toggleGalleryFavorite(it) },
                                         )
                                     }
                                 }
@@ -1059,6 +1062,10 @@ private fun FolderCard(
 ) {
     val countLabel = t("${entry.count} items", "${entry.count} item")
     val shape = RoundedCornerShape(16.dp)
+    val isProcessing by remember(entry.key) {
+        VideoThumbnailHelper.folderThumbnailProcessingState("gallery|${entry.key}")
+    }.collectAsState()
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -1071,6 +1078,21 @@ private fun FolderCard(
             settings = settings,
             modifier = Modifier.fillMaxSize(),
         )
+
+        if (isProcessing) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.5f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(28.dp),
+                    strokeWidth = 2.5.dp,
+                    color = com.mediadeck.app.ui.theme.DeckAccentBlue,
+                )
+            }
+        }
 
         Box(
             modifier = Modifier
@@ -1166,6 +1188,8 @@ private fun FolderListRow(
 private fun ItemDropdown(
     expanded: Boolean,
     onDismiss: () -> Unit,
+    isFavorite: Boolean,
+    onFavorite: (() -> Unit)?,
     onDownload: (() -> Unit)?,
     onDelete: () -> Unit,
 ) {
@@ -1175,6 +1199,28 @@ private fun ItemDropdown(
         shape = RoundedCornerShape(16.dp),
         containerColor = com.mediadeck.app.ui.theme.DeckSurface,
     ) {
+        if (onFavorite != null) {
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        if (isFavorite) t("Remove from Favorites", "Hapus dari Favorit")
+                        else t("Add to Favorites", "Tambah ke Favorit"),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = com.mediadeck.app.ui.theme.DeckTextPrimary,
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        contentDescription = null,
+                        tint = if (isFavorite) com.mediadeck.app.ui.theme.DeckBadgeRed else com.mediadeck.app.ui.theme.DeckTextSecondary,
+                        modifier = Modifier.size(18.dp),
+                    )
+                },
+                onClick = { onDismiss(); onFavorite() },
+            )
+        }
         if (onDownload != null) {
             DropdownMenuItem(
                 text = { Text(t("Download", "Unduh"), fontSize = 14.sp, fontWeight = FontWeight.Medium, color = com.mediadeck.app.ui.theme.DeckTextPrimary) },
@@ -1202,9 +1248,13 @@ fun GalleryCard(
     uniformGrid: Boolean = false,
     onDelete: (GalleryItem) -> Unit,
     onDownload: ((GalleryItem) -> Unit)? = null,
+    onFavorite: ((GalleryItem) -> Unit)? = null,
 ) {
     val onToggleSelection: (Long) -> Unit = remember(viewModel) { { id -> viewModel.toggleGallerySelection(id) } }
     val onStartMultiSelect: (Long) -> Unit = remember(viewModel) { { id -> viewModel.startGalleryMultiSelect(id) } }
+    val onToggleFavorite: (GalleryItem) -> Unit = remember(viewModel, onFavorite) {
+        onFavorite ?: { media -> viewModel.toggleGalleryFavorite(media) }
+    }
     GalleryCardContent(
         item = item,
         isSelected = isSelected,
@@ -1216,6 +1266,7 @@ fun GalleryCard(
         onStartMultiSelect = onStartMultiSelect,
         onDelete = onDelete,
         onDownload = onDownload,
+        onFavorite = onToggleFavorite,
     )
 }
 
@@ -1233,6 +1284,7 @@ private fun GalleryCardContent(
     onStartMultiSelect: (Long) -> Unit,
     onDelete: (GalleryItem) -> Unit,
     onDownload: ((GalleryItem) -> Unit)?,
+    onFavorite: ((GalleryItem) -> Unit)? = null,
 ) {
     val isVideo = item.mimeType.startsWith("video/", ignoreCase = true)
     val initialRatio = if (item.width > 0 && item.height > 0) {
@@ -1256,7 +1308,10 @@ private fun GalleryCardContent(
                 onLongClick = { onStartMultiSelect(item.id) }
             ),
     ) {
-        Box(modifier = Modifier.fillMaxWidth().aspectRatio(if (uniformGrid) 1f else aspectState.coerceIn(0.5f, 2.5f))) {
+        Box(
+            modifier = Modifier.fillMaxWidth().aspectRatio(if (uniformGrid) 1f else aspectState.coerceIn(0.5f, 2.5f)),
+            contentAlignment = Alignment.Center,
+        ) {
             AsyncThumbnailImage(
                 uriString = item.uri,
                 mediaId = item.id,
@@ -1264,6 +1319,7 @@ private fun GalleryCardContent(
                 settings = settings,
                 thumbnailVariant = "gallery",
                 showProcessingIndicator = true,
+                modifier = Modifier.fillMaxSize(),
                 onSuccess = { state ->
                     if (item.width == 0 || item.height == 0) {
                         val ratio = state.painter.intrinsicSize.width / state.painter.intrinsicSize.height
@@ -1275,6 +1331,25 @@ private fun GalleryCardContent(
             )
             if (isSelected) {
                 Box(Modifier.matchParentSize().background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)))
+            }
+            if (item.isFavorite) {
+                Surface(
+                    shape = CircleShape,
+                    color = Color.Black.copy(alpha = 0.55f),
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(6.dp)
+                        .size(26.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                        Icon(
+                            imageVector = Icons.Default.Favorite,
+                            contentDescription = null,
+                            tint = DeckBadgeRed,
+                            modifier = Modifier.size(15.dp),
+                        )
+                    }
+                }
             }
             if (isVideo) {
                 Surface(
@@ -1326,6 +1401,8 @@ private fun GalleryCardContent(
                         ItemDropdown(
                             expanded = true,
                             onDismiss = { showMenu = false },
+                            isFavorite = item.isFavorite,
+                            onFavorite = onFavorite?.let { cb -> { cb(item) } },
                             onDownload = onDownload?.let { cb -> { cb(item) } },
                             onDelete = { onDelete(item) },
                         )
@@ -1354,9 +1431,13 @@ fun GalleryListItem(
     settings: AppSettings,
     onDelete: (GalleryItem) -> Unit,
     onDownload: ((GalleryItem) -> Unit)? = null,
+    onFavorite: ((GalleryItem) -> Unit)? = null,
 ) {
     val onToggleSelection: (Long) -> Unit = remember(viewModel) { { id -> viewModel.toggleGallerySelection(id) } }
     val onStartMultiSelect: (Long) -> Unit = remember(viewModel) { { id -> viewModel.startGalleryMultiSelect(id) } }
+    val onToggleFavorite: (GalleryItem) -> Unit = remember(viewModel, onFavorite) {
+        onFavorite ?: { media -> viewModel.toggleGalleryFavorite(media) }
+    }
     GalleryListItemContent(
         item = item,
         isSelected = isSelected,
@@ -1367,6 +1448,7 @@ fun GalleryListItem(
         onStartMultiSelect = onStartMultiSelect,
         onDelete = onDelete,
         onDownload = onDownload,
+        onFavorite = onToggleFavorite,
     )
 }
 
@@ -1382,6 +1464,7 @@ private fun GalleryListItemContent(
     onStartMultiSelect: (Long) -> Unit,
     onDelete: (GalleryItem) -> Unit,
     onDownload: ((GalleryItem) -> Unit)?,
+    onFavorite: ((GalleryItem) -> Unit)? = null,
 ) {
 
     val details = remember(item.size, item.width, item.height, item.mimeType, item.duration) {
@@ -1441,20 +1524,27 @@ private fun GalleryListItemContent(
             horizontalAlignment = Alignment.End,
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            Icon(
-                imageVector = if (item.isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                contentDescription = null,
-                tint = if (item.isFavorite) DeckBadgeRed else subtle,
-                modifier = Modifier.padding(top = 4.dp, end = 8.dp).size(24.dp),
-            )
+            IconButton(
+                onClick = { onFavorite?.invoke(item) },
+                modifier = Modifier.size(34.dp),
+            ) {
+                Icon(
+                    imageVector = if (item.isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                    contentDescription = null,
+                    tint = if (item.isFavorite) DeckBadgeRed else subtle,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
             Box {
-                IconButton(onClick = { showMenu = true }, modifier = Modifier.size(40.dp)) {
+                IconButton(onClick = { showMenu = true }, modifier = Modifier.size(34.dp)) {
                     Icon(Icons.Default.MoreVert, null, tint = subtle)
                 }
                 if (showMenu) {
                     ItemDropdown(
                         expanded = true,
                         onDismiss = { showMenu = false },
+                        isFavorite = item.isFavorite,
+                        onFavorite = onFavorite?.let { cb -> { cb(item) } },
                         onDownload = onDownload?.let { cb -> { cb(item) } },
                         onDelete = { onDelete(item) },
                     )

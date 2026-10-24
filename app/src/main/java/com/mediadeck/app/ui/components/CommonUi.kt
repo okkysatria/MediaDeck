@@ -218,7 +218,7 @@ fun AsyncThumbnailImage(
     settings: AppSettings,
     thumbnailVariant: String = "explore",
     showProcessingIndicator: Boolean = false,
-    modifier: Modifier = Modifier,
+    modifier: Modifier = Modifier.fillMaxSize(),
     contentScale: ContentScale = ContentScale.Crop,
     onSuccess: ((coil3.compose.AsyncImagePainter.State.Success) -> Unit)? = null
 ) {
@@ -239,7 +239,10 @@ fun AsyncThumbnailImage(
         }
     }
 
-    Box(modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant)) {
+    Box(
+        modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant),
+        contentAlignment = Alignment.Center,
+    ) {
         if (request != null) {
             AsyncImage(
                 model = request,
