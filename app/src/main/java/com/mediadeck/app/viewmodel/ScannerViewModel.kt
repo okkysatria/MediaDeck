@@ -97,12 +97,7 @@ class ScannerViewModel @Inject constructor(
                 }
             }
         }
-        _isScanActive.onEach { active ->
-            ScannerStateManager.setScanActive(active)
-            if (!active) {
-                com.mediadeck.app.service.MediaScannerService.stopService(appContext)
-            }
-        }.launchIn(viewModelScope)
+        _isScanActive.onEach { ScannerStateManager.setScanActive(it) }.launchIn(viewModelScope)
         _isScanPaused.onEach { ScannerStateManager.setScanPaused(it) }.launchIn(viewModelScope)
         _isManualRefreshing.onEach { ScannerStateManager.setManualRefreshing(it) }.launchIn(viewModelScope)
     }

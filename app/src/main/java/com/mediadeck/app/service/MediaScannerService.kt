@@ -1,4 +1,5 @@
 package com.mediadeck.app.service
+
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -12,12 +13,15 @@ import androidx.core.app.NotificationCompat
 import com.mediadeck.app.MainActivity
 import com.mediadeck.app.util.scan.ScanProgressFormatter
 import dagger.hilt.android.AndroidEntryPoint
+
 @AndroidEntryPoint
 class MediaScannerService : Service() {
     companion object {
         const val CHANNEL_ID = "MediaScannerChannel"
         const val NOTIFICATION_ID = 1001
-        var isServiceRunning = false
+        const val ACTION_STOP = "com.mediadeck.app.service.ACTION_STOP"
+        @Volatile var isServiceRunning = false
+
         fun startService(context: Context, text: String = "Memindai Pustaka...") {
             val compactText = ScanProgressFormatter.compact(text)
             if (!isServiceRunning) {
@@ -32,11 +36,17 @@ class MediaScannerService : Service() {
                     }
                     isServiceRunning = true
                 } catch (e: Exception) {
+                    isServiceRunning = false
                     e.printStackTrace()
                 }
             } else {
-                val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                val pendingIntent = PendingIntent.getActivity(context, 0, Intent(context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+                val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                val pendingIntent = PendingIntent.getActivity(
+                    context,
+                    0,
+                    Intent(context, MainActivity::class.java),
+                    PendingIntent.FLAG_IMMUTABLE
+                )
                 val notification = NotificationCompat.Builder(context, CHANNEL_ID)
                     .setContentTitle("MediaDeck")
                     .setContentText(compactText)
@@ -46,20 +56,54 @@ class MediaScannerService : Service() {
                     .setOnlyAlertOnce(true)
                     .setOngoing(true)
                     .build()
-                manager.notify(NOTIFICATION_ID, notification)
+                manager?.notify(NOTIFICATION_ID, notification)
             }
         }
+
         fun stopService(context: Context) {
-            val intent = Intent(context, MediaScannerService::class.java)
-            context.stopService(intent)
+            if (!isServiceRunning) return
             isServiceRunning = false
+            try {
+                val intent = Intent(context, MediaScannerService::class.java).apply {
+                    action = ACTION_STOP
+                }
+                context.startService(intent)
+            } catch (e: Exception) {
+                try {
+                    val intent = Intent(context, MediaScannerService::class.java)
+                    context.stopService(intent)
+                } catch (_: Exception) {}
+            }
         }
     }
+
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        try {
+            val notification = createNotification("Memindai Pustaka...")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(true)
+            }
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
         val text = intent?.getStringExtra("PROGRESS_TEXT") ?: "Memindai Pustaka..."
         val notification = createNotification(text)
         try {
@@ -73,12 +117,14 @@ class MediaScannerService : Service() {
         }
         return START_NOT_STICKY
     }
+
     override fun onBind(intent: Intent?): IBinder? {
         return null
     }
+
     override fun onDestroy() {
-        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.cancel(NOTIFICATION_ID)
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+        manager?.cancel(NOTIFICATION_ID)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
         } else {
@@ -88,6 +134,7 @@ class MediaScannerService : Service() {
         super.onDestroy()
         isServiceRunning = false
     }
+
     private fun createNotification(content: String): android.app.Notification {
         val compactContent = ScanProgressFormatter.compact(content)
         val pendingIntent = PendingIntent.getActivity(
@@ -106,6 +153,7 @@ class MediaScannerService : Service() {
             .setOngoing(true)
             .build()
     }
+
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
@@ -115,8 +163,8 @@ class MediaScannerService : Service() {
             ).apply {
                 description = "Notifikasi saat memindai media pustaka"
             }
-            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            manager.createNotificationChannel(channel)
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            manager?.createNotificationChannel(channel)
         }
     }
 }
