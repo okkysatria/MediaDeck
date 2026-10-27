@@ -25,12 +25,15 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
@@ -40,11 +43,21 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -52,10 +65,16 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -86,24 +105,33 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.net.toUri
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.mediadeck.app.data.settings.AppSettings
 import androidx.compose.ui.graphics.luminance
 import com.mediadeck.app.ui.theme.DeckAccentBlue
+import com.mediadeck.app.ui.theme.DeckAccentPillBg
+import com.mediadeck.app.ui.theme.DeckBackground
 import com.mediadeck.app.ui.theme.DeckDivider
+import com.mediadeck.app.ui.theme.DeckOnAccent
 import com.mediadeck.app.ui.theme.DeckSurface
 import com.mediadeck.app.ui.theme.DeckSurfaceVariant
 import com.mediadeck.app.ui.theme.DeckTextPrimary
 import com.mediadeck.app.ui.theme.DeckTextSecondary
+import com.mediadeck.app.ui.theme.DeckBadgeRed
 import com.mediadeck.app.util.i18n.LocalLanguage
 import com.mediadeck.app.util.i18n.translate
 import com.mediadeck.app.util.media.VideoThumbnailHelper
@@ -113,6 +141,380 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+
+/** Shared overflow actions and file details for media cards across Gallery, Movies, and Comics. */
+@Composable
+fun MediaOverflowMenu(
+    isFavorite: Boolean,
+    infoTitle: String,
+    infoRows: List<Pair<String, String>>,
+    onFavorite: () -> Unit,
+    onDownload: (() -> Unit)? = null,
+    onDelete: () -> Unit,
+    onInfoOpened: () -> Unit = {},
+    buttonSize: Dp = 34.dp,
+    iconSize: Dp = 20.dp,
+    iconTint: Color = DeckTextSecondary,
+) {
+    val lang = LocalLanguage.current
+    fun t(en: String, id: String) = translate(lang, en, id)
+    var showMenu by remember { mutableStateOf(false) }
+    var showInfo by remember { mutableStateOf(false) }
+
+    Box {
+        IconButton(onClick = { showMenu = true }, modifier = Modifier.size(buttonSize)) {
+            Icon(Icons.Default.MoreVert, contentDescription = t("More options", "Opsi lainnya"), tint = iconTint, modifier = Modifier.size(iconSize))
+        }
+        DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }, shape = RoundedCornerShape(16.dp), containerColor = DeckSurface) {
+            DropdownMenuItem(
+                text = { Text(t("Info", "Info"), color = DeckTextPrimary) },
+                leadingIcon = { Icon(Icons.Outlined.Info, null, tint = DeckTextPrimary) },
+                onClick = { showMenu = false; onInfoOpened(); showInfo = true },
+            )
+            DropdownMenuItem(
+                text = { Text(if (isFavorite) t("Remove from Favorites", "Hapus dari Favorit") else t("Add to Favorites", "Tambah ke Favorit"), color = DeckTextPrimary) },
+                leadingIcon = { Icon(if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, null, tint = if (isFavorite) DeckBadgeRed else DeckTextSecondary) },
+                onClick = { showMenu = false; onFavorite() },
+            )
+            if (onDownload != null) {
+                DropdownMenuItem(
+                    text = { Text(t("Download", "Unduh"), color = DeckTextPrimary) },
+                    leadingIcon = { Icon(Icons.Default.Download, null, tint = DeckTextPrimary) },
+                    onClick = { showMenu = false; onDownload() },
+                )
+            }
+            DropdownMenuItem(
+                text = { Text(t("Delete", "Hapus"), color = DeckBadgeRed) },
+                leadingIcon = { Icon(Icons.Default.Delete, null, tint = DeckBadgeRed) },
+                onClick = { showMenu = false; onDelete() },
+            )
+        }
+    }
+
+    if (showInfo) {
+        MediaInfoBottomSheet(
+            title = infoTitle,
+            rows = infoRows,
+            onDismiss = { showInfo = false },
+            closeLabel = t("Close", "Tutup"),
+        )
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun MediaInfoBottomSheet(
+    title: String,
+    rows: List<Pair<String, String>>,
+    onDismiss: () -> Unit,
+    closeLabel: String,
+) {
+    val lang = LocalLanguage.current
+    fun t(en: String, id: String) = translate(lang, en, id)
+    val clipboard = LocalClipboard.current
+    val coroutineScope = rememberCoroutineScope()
+    val containerHeightPx = LocalWindowInfo.current.containerSize.height
+    val screenHeight = with(LocalDensity.current) { containerHeightPx.toDp() }
+    val displayTitle = remember(title) {
+        val parsedTitle = title.toUri()
+        if (parsedTitle.scheme != null) parsedTitle.lastPathSegment?.takeIf(String::isNotBlank) ?: title else title
+    }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val normalized = rows.map { (label, value) -> label to value }
+    fun matches(label: String, vararg terms: String) = terms.any { label.contains(it, ignoreCase = true) }
+    fun find(vararg terms: String) = normalized.firstOrNull { (label, value) -> value.isNotBlank() && value != "—" && matches(label, *terms) }
+
+    val type = find("type", "jenis")?.second.orEmpty()
+    val isVideo = matches(type, "video")
+    val isComic = matches(type, "comic", "komik")
+    val isImage = matches(type, "image", "foto", "gambar")
+    val pathValue = find("path", "lokasi")?.second.orEmpty()
+    val extension = pathValue.substringBefore('?').substringAfterLast('.', "").uppercase().takeIf { it.length in 2..5 }.orEmpty()
+    val format = find("format")?.second ?: extension.ifBlank { type.substringAfterLast('.', "").takeIf { it.isNotBlank() }.orEmpty() }
+    val subline = listOfNotNull(
+        type.takeIf { it.isNotBlank() },
+        if (isComic) find("total pages", "jumlah halaman")?.second else null,
+    ).joinToString(" · ")
+    val primaryTerms = listOf("format", "size", "ukuran", "duration", "durasi", "resolution", "resolusi", "added", "ditambahkan", "current page", "halaman saat ini")
+    val primaryRows = normalized.filter { (label, value) ->
+        value.isNotBlank() && (value != "—" || isComic || isImage) && primaryTerms.any { label.contains(it, ignoreCase = true) }
+    }
+        .let { existing ->
+            if (format.isNotBlank() && existing.none { matches(it.first, "format") }) {
+                listOf(t("Format", "Format") to format) + existing
+            } else existing
+        }
+    val tagsRow = normalized.firstOrNull { (label, _) -> matches(label, "tags", "tag") }
+    val descriptionRow = find("description", "deskripsi")
+    val remainingRows = normalized.filterNot { row ->
+        val label = row.first
+        row in primaryRows || row == tagsRow || row == descriptionRow ||
+            matches(label, "type", "jenis") ||
+            (isComic && matches(label, "total pages", "jumlah halaman")) ||
+            (isImage && matches(label, "duration", "durasi"))
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = DeckBackground,
+        contentColor = DeckTextPrimary,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        dragHandle = {
+            Box(
+                Modifier.padding(top = 10.dp, bottom = 8.dp).size(width = 40.dp, height = 5.dp)
+                    .clip(RoundedCornerShape(50)).background(DeckTextSecondary.copy(alpha = 0.45f))
+            )
+        },
+    ) {
+        Column(
+            Modifier.fillMaxWidth().heightIn(min = 360.dp, max = screenHeight * 0.9f),
+        ) {
+            Column(
+                Modifier.weight(1f).verticalScroll(androidx.compose.foundation.rememberScrollState())
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Box(
+                        Modifier.size(48.dp).clip(RoundedCornerShape(16.dp)).background(DeckAccentPillBg),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            when {
+                                isVideo -> Icons.Default.PlayCircle
+                                isComic -> Icons.Default.Book
+                                isImage -> Icons.Outlined.Image
+                                else -> Icons.Outlined.Info
+                            },
+                            null,
+                            tint = DeckAccentBlue,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text(displayTitle, fontSize = 18.sp, lineHeight = 23.sp, fontWeight = FontWeight.Bold, color = DeckTextPrimary)
+                        if (subline.isNotBlank()) Text(subline, fontSize = 14.sp, color = DeckTextSecondary)
+                    }
+                }
+
+                if (isVideo) {
+                    val formatRow = primaryRows.firstOrNull { matches(it.first, "format") }
+                    val sizeRow = primaryRows.firstOrNull { matches(it.first, "size", "ukuran") }
+                    val durationRow = primaryRows.firstOrNull { matches(it.first, "duration", "durasi") }
+                    val resolutionRow = primaryRows.firstOrNull { matches(it.first, "resolution", "resolusi") }
+                    val addedRow = primaryRows.firstOrNull { matches(it.first, "added", "ditambahkan") }
+                    val videoSummaryRows = listOfNotNull(formatRow, sizeRow, durationRow)
+                    val videoExtraRows = listOfNotNull(resolutionRow, addedRow)
+                    if (videoSummaryRows.isNotEmpty()) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            videoSummaryRows.forEach { (label, value) -> InfoValueCard(label, value, Modifier.weight(1f)) }
+                        }
+                    }
+                    if (videoExtraRows.isNotEmpty()) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            videoExtraRows.forEach { (label, value) -> InfoValueCard(label, value, Modifier.weight(1f)) }
+                        }
+                    }
+                } else if (isComic) {
+                    val formatRow = primaryRows.firstOrNull { matches(it.first, "format") }
+                    val sizeRow = primaryRows.firstOrNull { matches(it.first, "size", "ukuran") }
+                    val addedRow = primaryRows.firstOrNull { matches(it.first, "added", "ditambahkan") }
+                    val currentPageRow = primaryRows.firstOrNull { matches(it.first, "current page", "halaman saat ini") }
+                    val comicFileRows = listOfNotNull(formatRow, sizeRow)
+                    if (comicFileRows.isNotEmpty()) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            comicFileRows.forEach { (label, value) -> InfoValueCard(label, value, Modifier.weight(1f)) }
+                        }
+                    }
+                    addedRow?.let { (label, value) -> InfoValueCard(label, value, Modifier.fillMaxWidth()) }
+                    currentPageRow?.let { (label, value) -> InfoProgressCard(label, value) }
+                } else if (isImage) {
+                    val formatRow = primaryRows.firstOrNull { matches(it.first, "format") }
+                    val sizeRow = primaryRows.firstOrNull { matches(it.first, "size", "ukuran") }
+                    val addedRow = primaryRows.firstOrNull { matches(it.first, "added", "ditambahkan") }
+                    val resolutionRow = primaryRows.firstOrNull { matches(it.first, "resolution", "resolusi") }
+                    val imageFileRows = listOfNotNull(formatRow, sizeRow)
+                    if (imageFileRows.isNotEmpty()) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            imageFileRows.forEach { (label, value) -> InfoValueCard(label, value, Modifier.weight(1f)) }
+                        }
+                    }
+                    addedRow?.let { (label, value) -> InfoValueCard(label, value, Modifier.fillMaxWidth()) }
+                    resolutionRow?.let { (label, value) -> InfoValueCard(label, value, Modifier.fillMaxWidth()) }
+                } else {
+                    primaryRows.chunked(2).forEach { pair ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            pair.forEach { (label, value) -> InfoValueCard(label, value, Modifier.weight(1f)) }
+                            if (pair.size == 1) Spacer(Modifier.weight(1f))
+                        }
+                    }
+                }
+
+                descriptionRow?.let { (label, value) ->
+                    Column(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(DeckSurfaceVariant).padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(7.dp),
+                    ) {
+                        Text(label.uppercase(), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = DeckTextSecondary)
+                        Text(value.ifBlank { "—" }, fontSize = 15.sp, lineHeight = 21.sp, color = DeckTextPrimary)
+                    }
+                }
+
+                tagsRow?.let { (_, rawTags) ->
+                    Column(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(DeckSurfaceVariant).padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Text(t("TAGS", "TAG"), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = DeckTextSecondary)
+                        val tagList = rawTags.split(',').map(String::trim).filter(String::isNotBlank)
+                        if (tagList.isEmpty()) {
+                            Text(t("No tags added", "Belum ada tag"), color = DeckTextSecondary, fontSize = 14.sp)
+                        } else {
+                            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                tagList.forEach { tag ->
+                                    Box(Modifier.clip(CircleShape).background(DeckAccentPillBg).padding(horizontal = 12.dp, vertical = 6.dp)) {
+                                        Text(tag, color = DeckAccentBlue, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                remainingRows.forEach { (label, value) ->
+                    val isPath = matches(label, "path", "lokasi")
+                    Column(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(DeckSurfaceVariant).padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(7.dp),
+                    ) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(label.uppercase(), Modifier.weight(1f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = DeckTextSecondary)
+                            if (isPath) {
+                                IconButton(
+                                    onClick = {
+                                        coroutineScope.launch {
+                                            clipboard.setClipEntry(androidx.compose.ui.platform.ClipEntry(android.content.ClipData.newPlainText("Path", value)))
+                                        }
+                                    },
+                                    modifier = Modifier.size(28.dp),
+                                ) {
+                                    Icon(Icons.Outlined.ContentCopy, contentDescription = t("Copy path", "Salin lokasi"), tint = DeckTextSecondary, modifier = Modifier.size(18.dp))
+                                }
+                            }
+                        }
+                        Text(
+                            value.ifBlank { "—" },
+                            fontSize = if (isPath) 13.sp else 15.sp,
+                            lineHeight = 21.sp,
+                            fontFamily = if (isPath) FontFamily.Monospace else FontFamily.Default,
+                            color = DeckTextPrimary,
+                        )
+                    }
+                }
+            }
+            androidx.compose.material3.HorizontalDivider(color = DeckDivider)
+            Button(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp).height(48.dp).navigationBarsPadding(),
+                shape = RoundedCornerShape(24.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = DeckAccentBlue, contentColor = DeckOnAccent),
+            ) {
+                Text(closeLabel, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun InfoValueCard(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier.clip(RoundedCornerShape(16.dp)).background(DeckSurfaceVariant).padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        Text(label.uppercase(), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = DeckTextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(value, fontSize = 15.sp, lineHeight = 19.sp, fontWeight = FontWeight.SemiBold, color = DeckTextPrimary)
+    }
+}
+
+@Composable
+private fun InfoProgressCard(label: String, value: String) {
+    val progressValues = value.split('/').map { it.trim().toFloatOrNull() }
+    val progress = if (progressValues.size == 2 && progressValues[1] != null && progressValues[1]!! > 0f) {
+        ((progressValues[0] ?: 0f) / progressValues[1]!!).coerceIn(0f, 1f)
+    } else {
+        0f
+    }
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(DeckSurfaceVariant).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(label.uppercase(), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = DeckTextSecondary)
+        Text(value, fontSize = 15.sp, lineHeight = 19.sp, fontWeight = FontWeight.SemiBold, color = DeckTextPrimary)
+        Box(Modifier.fillMaxWidth().height(4.dp).clip(CircleShape).background(DeckDivider)) {
+            Box(Modifier.fillMaxWidth(progress).height(4.dp).clip(CircleShape).background(DeckAccentBlue))
+        }
+    }
+}
+
+@Composable
+fun MediaEmptyState(
+    title: String,
+    modifier: Modifier = Modifier,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
+) {
+    Box(modifier, contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(title, color = DeckTextSecondary, fontSize = 14.sp)
+            if (onAction != null) {
+                Spacer(Modifier.height(16.dp))
+                FloatingActionButton(
+                    onClick = onAction,
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    shape = RoundedCornerShape(16.dp),
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = actionLabel)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun MediaSelectionCountTitle(selectedCount: Int) {
+    val lang = LocalLanguage.current
+    fun t(en: String, id: String) = translate(lang, en, id)
+    Text(t("$selectedCount Selected", "$selectedCount Terpilih"), fontSize = 18.sp, fontWeight = FontWeight.Bold)
+}
+
+@Composable
+fun MediaSelectionExitButton(onClick: () -> Unit) {
+    val lang = LocalLanguage.current
+    IconButton(onClick = onClick) {
+        Icon(Icons.Default.Close, contentDescription = translate(lang, "Cancel", "Batal"))
+    }
+}
+
+@Composable
+fun MediaSelectionDeleteButton(onClick: () -> Unit, enabled: Boolean = true) {
+    val lang = LocalLanguage.current
+    IconButton(onClick = onClick, enabled = enabled) {
+        Icon(
+            Icons.Default.Delete,
+            contentDescription = translate(lang, "Delete", "Hapus"),
+            tint = if (enabled) DeckBadgeRed else DeckBadgeRed.copy(alpha = 0.35f),
+        )
+    }
+}
 
 private val FolderPlaceholderBrush = Brush.linearGradient(listOf(Color(0xFF2C3037), Color(0xFF1F222A)))
 private val HeroPlaceholderBrush = Brush.linearGradient(listOf(Color(0xFF4A5A8F), Color(0xFF9A6AB0)))
@@ -201,6 +603,7 @@ fun AsyncThumbnailImage(
     thumbnailVariant: String = "explore",
     showProcessingIndicator: Boolean = false,
     contentScale: ContentScale = ContentScale.Crop,
+    placeholder: (@Composable BoxScope.() -> Unit)? = null,
     onSuccess: ((coil3.compose.AsyncImagePainter.State.Success) -> Unit)? = null
 ) {
     val context = LocalContext.current
@@ -232,6 +635,8 @@ fun AsyncThumbnailImage(
                 onSuccess = onSuccess,
                 modifier = Modifier.fillMaxSize()
             )
+        } else {
+            placeholder?.invoke(this)
         }
         if (showProcessingIndicator) {
             ThumbnailProcessingBadge(mediaId, thumbnailVariant)
@@ -300,6 +705,7 @@ fun FolderGroupCard(
     progressPercent: Int? = null,
     progressRatioText: String? = null,
     isWaiting: Boolean = false,
+    thumbnailContent: (@Composable BoxScope.() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     val lang = LocalLanguage.current
@@ -315,7 +721,9 @@ fun FolderGroupCard(
             .background(DeckSurface)
             .clickable(onClick = onClick),
     ) {
-        if (mosaicUri != null && showThumbnail) {
+        if (thumbnailContent != null) {
+            thumbnailContent()
+        } else if (mosaicUri != null && showThumbnail) {
             AsyncImage(
                 model = mosaicUri,
                 contentDescription = null,
@@ -466,14 +874,19 @@ fun FolderGroupCard(
 fun FolderGroupListItem(
     folderName: String,
     countLabel: String,
+    folderKey: String? = null,
+    legacyFolderName: String? = null,
     processingKey: String? = null,
     progressRatioText: String? = null,
     progressPercent: Int? = null,
     isWaiting: Boolean = false,
+    supportingLabel: String? = null,
+    thumbnailContent: (@Composable BoxScope.() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     val lang = LocalLanguage.current
     val isProcessing = rememberFolderProcessing(processingKey)
+    val mosaicUri = if (folderKey != null) rememberFolderThumbnailUri(folderKey, legacyFolderName) else null
 
     Surface(
         shape = RoundedCornerShape(16.dp),
@@ -495,7 +908,16 @@ fun FolderGroupListItem(
                     .background(DeckSurfaceVariant),
                 contentAlignment = Alignment.Center
             ) {
-                if (isProcessing) {
+                if (thumbnailContent != null) {
+                    thumbnailContent()
+                } else if (mosaicUri != null) {
+                    AsyncImage(
+                        model = mosaicUri,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else if (isProcessing) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(24.dp),
                         strokeWidth = 2.5.dp,
@@ -539,11 +961,22 @@ fun FolderGroupListItem(
                         trackColor = Color.White.copy(alpha = 0.2f)
                     )
                 } else {
-                    Text(
-                        text = if (isWaiting) "$countLabel · " + translate(lang, "waiting", "menunggu") else countLabel,
-                        fontSize = 13.sp,
-                        color = DeckTextSecondary
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = if (isWaiting) "$countLabel · " + translate(lang, "waiting", "menunggu") else countLabel,
+                            fontSize = 13.sp,
+                            color = DeckTextSecondary,
+                        )
+                        if (!supportingLabel.isNullOrEmpty()) {
+                            Text(
+                                text = supportingLabel,
+                                fontSize = 12.sp,
+                                color = DeckTextSecondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
                 }
             }
 

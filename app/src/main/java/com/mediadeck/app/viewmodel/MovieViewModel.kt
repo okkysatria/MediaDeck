@@ -241,21 +241,13 @@ class MovieViewModel @Inject constructor(
     fun enqueueMissingThumbnails(context: Context) {
         viewModelScope.launch(Dispatchers.IO) {
             val settings = repository.getSettingsDirect()
-            var queued = 0
-            for (movie in repository.getAllMoviesDirect()) {
-                if (VideoThumbnailHelper.hasCachedThumbnail(context, movie.id, "movie")) continue
-                MediaProcessingEngine.enqueue(
-                    MediaProcessingEngine.ProcessingTask(
-                        context = context,
-                        uri = movie.uri,
-                        mediaId = movie.id,
-                        settings = settings,
-                        skipThumbnail = false,
-                        thumbnailVariant = "movie",
-                    ) { _ -> }
-                )
-                queued++
-            }
+            val queued = MediaProcessingEngine.enqueueMissingThumbnails(
+                context = context,
+                settings = settings,
+                mediaItems = repository.getAllMoviesDirect().map { movie ->
+                    MediaProcessingEngine.ThumbnailRequest(movie.uri, movie.id, "movie")
+                },
+            )
             android.util.Log.i("MovieViewModel", "Queued $queued missing movie thumbnails")
         }
     }
@@ -263,23 +255,24 @@ class MovieViewModel @Inject constructor(
         if (folderName.isNullOrBlank()) return
         viewModelScope.launch(Dispatchers.IO) {
             val settings = repository.getSettingsDirect()
-            val tasks = repository.allMovies.first()
+            val mediaItems = repository.allMovies.first()
                 .asSequence()
                 .filter { MediaFolderIdentity.key(it.folderUri, it.uri) == folderName }
-                .filterNot { VideoThumbnailHelper.hasCachedThumbnail(context, it.id, "movie") }
-                .sortedBy { it.title.lowercase() }
                 .map { movie ->
-                    MediaProcessingEngine.ProcessingTask(
-                        context = context,
+                    MediaProcessingEngine.ThumbnailRequest(
                         uri = movie.uri,
                         mediaId = movie.id,
-                        settings = settings,
-                        skipThumbnail = false,
-                        thumbnailVariant = "movie",
-                    ) { _ -> }
+                        variant = "movie",
+                        sortKey = movie.title.lowercase(),
+                    )
                 }
                 .toList()
-            MediaProcessingEngine.enqueueFolderMediaBatch(folderName, tasks)
+            MediaProcessingEngine.enqueueMissingThumbnails(
+                context = context,
+                settings = settings,
+                mediaItems = mediaItems,
+                folderKey = folderName,
+            )
         }
     }
     fun enqueueFolderThumbnail(

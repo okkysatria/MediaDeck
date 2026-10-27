@@ -60,6 +60,16 @@ import com.mediadeck.app.ui.components.ScanStatusCard
 import com.mediadeck.app.ui.components.AsyncThumbnailImage
 import com.mediadeck.app.ui.components.FolderGroupCard
 import com.mediadeck.app.ui.components.FolderGroupListItem
+import com.mediadeck.app.ui.components.MediaDeckSideSheet
+import com.mediadeck.app.ui.components.MediaOverflowMenu
+import com.mediadeck.app.ui.components.MediaEmptyState
+import com.mediadeck.app.ui.components.MediaSelectionCountTitle
+import com.mediadeck.app.ui.components.MediaSelectionDeleteButton
+import com.mediadeck.app.ui.components.MediaSelectionExitButton
+import com.mediadeck.app.util.media.MediaFormatters
+import com.mediadeck.app.ui.components.movieInfoRows
+import com.mediadeck.app.ui.components.SheetActionRow
+import com.mediadeck.app.ui.components.SheetSegmented
 import com.mediadeck.app.ui.components.rememberBottomBarPadding
 import com.mediadeck.app.ui.theme.DeckDivider
 import com.mediadeck.app.ui.theme.DeckOnAccent
@@ -181,9 +191,7 @@ fun MoviesScreen(
                                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = t("Back", "Kembali"))
                             }
                         } else if (isMultiSelect) {
-                            IconButton(onClick = { viewModel.clearMovieSelection() }) {
-                                Icon(Icons.Default.Close, contentDescription = t("Cancel", "Batal"))
-                            }
+                            MediaSelectionExitButton(onClick = { viewModel.clearMovieSelection() })
                         }
                     },
                     title = {
@@ -221,14 +229,12 @@ fun MoviesScreen(
                                     .focusRequester(focusRequester),
                             )
                         } else {
-                            Text(t("${selectedIds.size} Selected", "${selectedIds.size} Terpilih"), fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                            MediaSelectionCountTitle(selectedIds.size)
                         }
                     },
                     actions = {
                         if (isMultiSelect) {
-                            IconButton(onClick = { showDeleteConfirmDialog = true }) {
-                                Icon(Icons.Default.Delete, contentDescription = t("Delete", "Hapus"), tint = com.mediadeck.app.ui.theme.DeckBadgeRed)
-                            }
+                            MediaSelectionDeleteButton(onClick = { showDeleteConfirmDialog = true })
                         }
                     }
                 )
@@ -375,29 +381,12 @@ fun MoviesScreen(
                     )
                 }
                 if (movies.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                            .verticalScroll(rememberScrollState()),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center,
-                        ) {
-                            Text(t("No videos found", "Video tidak ditemukan"))
-                            Spacer(modifier = Modifier.height(16.dp))
-                            FloatingActionButton(
-                                onClick = onNavigateToScan,
-                                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                                shape = RoundedCornerShape(16.dp),
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = t("Add Folder", "Tambah Folder"))
-                            }
-                        }
-                    }
+                    MediaEmptyState(
+                        title = t("No videos found", "Video tidak ditemukan"),
+                        modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+                        actionLabel = t("Add Folder", "Tambah Folder"),
+                        onAction = onNavigateToScan,
+                    )
                 } else {
                     val isTitleOnly = settings.layoutMode == "title_only"
                     val bottomBarPadding = rememberBottomBarPadding(16.dp)
@@ -522,7 +511,7 @@ fun MoviesScreen(
         }
     }
     if (showMainMenu) {
-        GallerySideSheet(
+        MediaDeckSideSheet(
             title = t("Movies Options", "Opsi Film"),
             onDismiss = { showMainMenu = false },
         ) {
@@ -591,69 +580,29 @@ fun MoviesScreen(
         }
     }
     if (showSortDialog) {
-        val sortOptions = listOf(
-            "name_asc" to t("Name (A-Z)", "Nama (A-Z)"),
-            "name_desc" to t("Name (Z-A)", "Nama (Z-A)"),
-            "date_desc" to t("Newest Added", "Terbaru Ditambahkan"),
-            "date_asc" to t("Oldest Added", "Terlama Ditambahkan"),
-            "size_desc" to t("Largest Size", "Ukuran Terbesar"),
-            "size_asc" to t("Smallest Size", "Ukuran Kecil"),
-            "random" to t("Shuffle / Random", "Acak"),
+        val sortGroups = listOf(
+            listOf("name_asc" to t("Name (A-Z)", "Nama (A-Z)"), "name_desc" to t("Name (Z-A)", "Nama (Z-A)")),
+            listOf("date_desc" to t("Newest Added", "Terbaru Ditambahkan"), "date_asc" to t("Oldest Added", "Terlama Ditambahkan")),
+            listOf("size_desc" to t("Largest Size", "Ukuran Terbesar"), "size_asc" to t("Smallest Size", "Ukuran Terkecil")),
+            listOf("random" to t("Shuffle / Random", "Acak")),
         )
-        val sortGroups = listOf(sortOptions.subList(0, 2), sortOptions.subList(2, 4), sortOptions.subList(4, 6), sortOptions.subList(6, 7))
-        GallerySideSheet(
+        MediaDeckSideSheet(
             title = t("Sort Video", "Urutkan Video"),
+            currentSort = sortOption,
+            sortGroups = sortGroups,
+            onSortSelected = { key ->
+                viewModel.setMovieSort(key)
+                if (key == "random") folderShuffleSeed = kotlin.random.Random.nextInt()
+                showSortDialog = false
+            },
             onDismiss = { showSortDialog = false },
             onBack = { showSortDialog = false; showMainMenu = true },
-        ) {
-            sortGroups.forEachIndexed { groupIndex, group ->
-                if (groupIndex > 0) {
-                    HorizontalDivider(
-                        color = Color.White.copy(alpha = 0.08f),
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    )
-                }
-                group.forEach { (key, label) ->
-                    val selected = sortOption == key
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(if (selected) com.mediadeck.app.ui.theme.DeckAccentBlue.copy(alpha = 0.16f) else Color.Transparent)
-                            .clickable {
-                                viewModel.setMovieSort(key)
-                                if (key == "random") folderShuffleSeed = kotlin.random.Random.nextInt()
-                                showSortDialog = false
-                            }
-                            .padding(horizontal = 14.dp)
-                            .height(52.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    ) {
-                        RadioButton(
-                            selected = selected,
-                            onClick = null,
-                            colors = RadioButtonDefaults.colors(
-                                selectedColor = com.mediadeck.app.ui.theme.DeckAccentBlue,
-                                unselectedColor = com.mediadeck.app.ui.theme.DeckTextSecondary,
-                            ),
-                        )
-                        Text(
-                            text = label,
-                            fontSize = 16.sp,
-                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                            color = com.mediadeck.app.ui.theme.DeckTextPrimary,
-                        )
-                    }
-                }
-            }
-        }
+        )
     }
 }
 @Composable
 fun MovieCard(movie: Movie, isSelected: Boolean, isMultiSelect: Boolean, onOpenMovie: (Movie) -> Unit, viewModel: MovieViewModel, settings: com.mediadeck.app.data.settings.AppSettings, onDelete: (Movie) -> Unit) {
     val context = LocalContext.current
-    var showMenu by remember { mutableStateOf(false) }
 
     val durationText = if (movie.duration > 0L) com.mediadeck.app.util.media.MediaUtils.formatDuration(movie.duration) else ""
     val progressFraction = if (movie.duration > 0L && movie.lastPlayedPosition > 0L) (movie.lastPlayedPosition.toFloat() / movie.duration.toFloat()) else 0f
@@ -745,49 +694,16 @@ fun MovieCard(movie: Movie, isSelected: Boolean, isMultiSelect: Boolean, onOpenM
                     .weight(1f)
                     .padding(start = 4.dp)
             )
-            Box {
-                IconButton(onClick = { showMenu = true }, modifier = Modifier.size(24.dp)) {
-                    Icon(
-                        imageVector = Icons.Default.MoreVert,
-                        contentDescription = "Menu",
-                        tint = com.mediadeck.app.ui.theme.DeckTextSecondary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-                DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                if (movie.isFavorite) t("Remove from Favorites", "Hapus dari Favorit")
-                                else t("Add to Favorites", "Tambah ke Favorit")
-                            )
-                        },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = if (movie.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                                contentDescription = null,
-                                tint = if (movie.isFavorite) com.mediadeck.app.ui.theme.DeckBadgeRed else com.mediadeck.app.ui.theme.DeckTextSecondary,
-                            )
-                        },
-                        onClick = {
-                            showMenu = false
-                            viewModel.toggleMovieFavorite(movie)
-                        }
-                    )
-                    if (com.mediadeck.app.util.media.MediaUtils.isSmbUri(movie.uri)) {
-                        DropdownMenuItem(
-                            text = { Text(t("Download", "Unduh")) },
-                            leadingIcon = { Icon(Icons.Default.Download, null) },
-                            onClick = { showMenu = false; viewModel.downloadSmbFile(context, movie.uri, movie.title) }
-                        )
-                    }
-                    DropdownMenuItem(
-                        text = { Text(t("Delete", "Hapus"), color = com.mediadeck.app.ui.theme.DeckBadgeRed) },
-                        leadingIcon = { Icon(Icons.Default.Delete, null, tint = com.mediadeck.app.ui.theme.DeckBadgeRed) },
-                        onClick = { showMenu = false; onDelete(movie) }
-                    )
-                }
-            }
+            MediaOverflowMenu(
+                isFavorite = movie.isFavorite,
+                infoTitle = movie.title,
+                infoRows = movieInfoRows(movie),
+                onFavorite = { viewModel.toggleMovieFavorite(movie) },
+                onDownload = if (com.mediadeck.app.util.media.MediaUtils.isSmbUri(movie.uri)) ({ viewModel.downloadSmbFile(context, movie.uri, movie.title) }) else null,
+                onDelete = { onDelete(movie) },
+                buttonSize = 24.dp,
+                iconSize = 18.dp,
+            )
         }
     }
 }
@@ -797,9 +713,8 @@ fun MovieListItem(movie: Movie, isMultiSelect: Boolean, onOpenMovie: (Movie) -> 
     val subtitle = listOfNotNull(
         movie.resolution.takeIf { it.isNotBlank() },
         movie.duration.takeIf { it > 0 }?.let { com.mediadeck.app.util.media.MediaUtils.formatDuration(it) },
-        formatSize(movie.size),
+        MediaFormatters.fileSize(movie.size, unknownValue = "0 B"),
     ).joinToString(" · ")
-    var showMenu by remember { mutableStateOf(false) }
     val progressFraction = if (movie.duration > 0L && movie.lastPlayedPosition > 0L) (movie.lastPlayedPosition.toFloat() / movie.duration.toFloat()) else 0f
 
     Surface(
@@ -888,67 +803,17 @@ fun MovieListItem(movie: Movie, isMultiSelect: Boolean, onOpenMovie: (Movie) -> 
                     )
                 }
 
-                Box {
-                    IconButton(
-                        onClick = { showMenu = true },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = "Menu",
-                            tint = com.mediadeck.app.ui.theme.DeckTextSecondary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    if (movie.isFavorite) t("Remove from Favorites", "Hapus dari Favorit")
-                                    else t("Add to Favorites", "Tambah ke Favorit")
-                                )
-                            },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = if (movie.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                                    contentDescription = null,
-                                    tint = if (movie.isFavorite) com.mediadeck.app.ui.theme.DeckBadgeRed else com.mediadeck.app.ui.theme.DeckTextSecondary,
-                                )
-                            },
-                            onClick = {
-                                showMenu = false
-                                viewModel.toggleMovieFavorite(movie)
-                            }
-                        )
-                        if (com.mediadeck.app.util.media.MediaUtils.isSmbUri(movie.uri)) {
-                            DropdownMenuItem(
-                                text = { Text(t("Download", "Unduh")) },
-                                leadingIcon = { Icon(Icons.Default.Download, null) },
-                                onClick = { showMenu = false; viewModel.downloadSmbFile(context, movie.uri, movie.title) }
-                            )
-                        }
-                        DropdownMenuItem(
-                            text = { Text(t("Delete", "Hapus"), color = com.mediadeck.app.ui.theme.DeckBadgeRed) },
-                            leadingIcon = { Icon(Icons.Default.Delete, null, tint = com.mediadeck.app.ui.theme.DeckBadgeRed) },
-                            onClick = { showMenu = false; onDelete(movie) }
-                        )
-                    }
-                }
+                MediaOverflowMenu(
+                    isFavorite = movie.isFavorite,
+                    infoTitle = movie.title,
+                    infoRows = movieInfoRows(movie),
+                    onFavorite = { viewModel.toggleMovieFavorite(movie) },
+                    onDownload = if (com.mediadeck.app.util.media.MediaUtils.isSmbUri(movie.uri)) ({ viewModel.downloadSmbFile(context, movie.uri, movie.title) }) else null,
+                    onDelete = { onDelete(movie) },
+                    buttonSize = 32.dp,
+                    iconSize = 20.dp,
+                )
             }
         }
     }
 }
-private fun formatSize(bytes: Long): String {
-    if (bytes <= 0) return "0 B"
-    val units = listOf("B", "KB", "MB", "GB")
-    var size = bytes.toDouble()
-    var i = 0
-    while (size >= 1024 && i < units.size - 1) {
-        size /= 1024
-        i++
-    }
-    return "%.1f %s".format(size, units[i])
-}
-
-

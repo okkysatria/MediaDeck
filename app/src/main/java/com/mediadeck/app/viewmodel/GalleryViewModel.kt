@@ -7,6 +7,7 @@ import com.mediadeck.app.data.AppRepository
 import com.mediadeck.app.data.gallery.GalleryItem
 import com.mediadeck.app.data.settings.AppSettings
 import com.mediadeck.app.util.media.MediaUtils
+import com.mediadeck.app.util.media.VideoThumbnailHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -25,7 +26,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.time.Duration.Companion.milliseconds
 import java.io.File
-import com.mediadeck.app.util.media.VideoThumbnailHelper
 import com.mediadeck.app.util.media.MediaFolderIdentity
 import com.mediadeck.app.util.scan.MediaProcessingEngine
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -307,45 +307,51 @@ class GalleryViewModel @Inject constructor(
     fun enqueueMissingThumbnails(context: Context) {
         viewModelScope.launch(Dispatchers.IO) {
             val settings = repository.getSettingsDirect()
-            var queued = 0
-            for ((id, uri) in repository.getAllGalleryItemsDirect()) {
-                if (VideoThumbnailHelper.hasCachedThumbnail(context, id, "gallery")) continue
-                MediaProcessingEngine.enqueue(
-                    MediaProcessingEngine.ProcessingTask(
-                        context = context,
-                        uri = uri,
-                        mediaId = id,
-                        settings = settings,
-                        skipThumbnail = false,
-                        thumbnailVariant = "gallery",
-                    ) { _ -> }
-                )
-                queued++
-            }
+            val queued = MediaProcessingEngine.enqueueMissingThumbnails(
+                context = context,
+                settings = settings,
+                mediaItems = repository.getAllGalleryItemsDirect().map { (id, uri) ->
+                    MediaProcessingEngine.ThumbnailRequest(uri, id, "gallery")
+                },
+            )
             android.util.Log.i("GalleryViewModel", "Queued $queued missing gallery thumbnails")
+        }
+    }
+    fun enqueueFolderThumbnail(context: Context, folderKey: String, covers: List<GalleryItem>) {
+        if (covers.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            if (VideoThumbnailHelper.hasCachedFolderThumbnail(context, folderKey)) return@launch
+            val settings = repository.getSettingsDirect()
+            val mediaItems = covers.take(4).map { item ->
+                Triple(item.uri, item.id, "gallery")
+            }
+            MediaProcessingEngine.enqueueFolderMosaic(
+                MediaProcessingEngine.FolderMosaicTask(context, folderKey, mediaItems, settings),
+            )
         }
     }
     fun onFolderVisited(context: Context, folderName: String?) {
         if (folderName.isNullOrBlank()) return
         viewModelScope.launch(Dispatchers.IO) {
             val settings = repository.getSettingsDirect()
-            val tasks = repository.allGalleryItems.first()
+            val mediaItems = repository.allGalleryItems.first()
                 .asSequence()
                 .filter { MediaFolderIdentity.key(it.folderUri, it.uri) == folderName }
-                .filterNot { VideoThumbnailHelper.hasCachedThumbnail(context, it.id, "gallery") }
-                .sortedBy { it.name.lowercase() }
                 .map { item ->
-                    MediaProcessingEngine.ProcessingTask(
-                        context = context,
+                    MediaProcessingEngine.ThumbnailRequest(
                         uri = item.uri,
                         mediaId = item.id,
-                        settings = settings,
-                        skipThumbnail = false,
-                        thumbnailVariant = "gallery",
-                    ) { _ -> }
+                        variant = "gallery",
+                        sortKey = item.name.lowercase(),
+                    )
                 }
                 .toList()
-            MediaProcessingEngine.enqueueFolderMediaBatch(folderName, tasks)
+            MediaProcessingEngine.enqueueMissingThumbnails(
+                context = context,
+                settings = settings,
+                mediaItems = mediaItems,
+                folderKey = folderName,
+            )
         }
     }
     fun setScrollPosition(index: Int, offset: Int) {

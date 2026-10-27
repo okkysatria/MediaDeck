@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -36,6 +37,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -136,6 +138,7 @@ import com.mediadeck.app.ui.components.DeleteConfirmationDialog
 import com.mediadeck.app.ui.components.ZoomableMediaBox
 import com.mediadeck.app.util.i18n.t
 import com.mediadeck.app.util.media.MediaUtils
+import com.mediadeck.app.util.media.MediaFormatters
 import com.mediadeck.app.util.scan.ScannerStateManager
 import com.mediadeck.app.viewmodel.GalleryViewModel
 import com.mediadeck.app.viewmodel.MovieViewModel
@@ -144,9 +147,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 @androidx.media3.common.util.UnstableApi
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -286,6 +286,7 @@ fun GalleryViewerScreen(
     }
     Scaffold(
         containerColor = Color.Black,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         modifier = modifier
             .focusRequester(focusRequester)
             .focusable()
@@ -329,11 +330,12 @@ fun GalleryViewerScreen(
                     else -> false
                 }
             },
-    ) { _ ->
+    ) { innerPadding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black),
+                .background(Color.Black)
+                .padding(innerPadding),
             contentAlignment = Alignment.Center,
         ) {
             HorizontalPager(
@@ -421,7 +423,9 @@ fun GalleryViewerScreen(
                 visible = showUi,
                 enter = fadeIn(),
                 exit = fadeOut(),
-                modifier = Modifier.align(Alignment.TopCenter)
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding(),
             ) {
                 TopAppBar(
                     title = {
@@ -454,6 +458,7 @@ fun GalleryViewerScreen(
                         }
                     },
                     expandedHeight = 56.dp,
+                    windowInsets = WindowInsets(0, 0, 0, 0),
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                         titleContentColor = Color.White,
@@ -610,8 +615,8 @@ fun GalleryViewerScreen(
                     .fillMaxWidth()
                     .align(Alignment.BottomCenter),
             ) {
-                val sizeFormatted = remember(currentItem.size) { formatMediaSize(currentItem.size) }
-                val dateText = remember(currentItem.dateAdded) { formatMediaDate(currentItem.dateAdded) }
+                val sizeFormatted = remember(currentItem.size) { MediaFormatters.fileSize(currentItem.size) }
+                val dateText = remember(currentItem.dateAdded) { MediaFormatters.dateTime(currentItem.dateAdded, unknownValue = "-") }
                 val tagList = remember(currentItem.tags) {
                     currentItem.tags.split(",").map { it.trim() }.filter { it.isNotEmpty() }.distinct()
                 }
@@ -1067,7 +1072,6 @@ private fun VideoPlayerPage(
         )
     }
 }
-
 @Composable
 private fun PreloadGalleryNeighbors(items: List<GalleryItem>, currentIndex: Int) {
     val context = LocalContext.current
@@ -1118,17 +1122,4 @@ private fun GalleryDetailRow(label: String, value: String) {
             modifier = Modifier.weight(1f, fill = false),
         )
     }
-}
-
-private fun formatMediaSize(bytes: Long): String = when {
-    bytes >= (1L shl 30) -> String.format(Locale.US, "%.1f GB", bytes / 1073741824.0)
-    bytes >= (1L shl 20) -> String.format(Locale.US, "%.1f MB", bytes / 1048576.0)
-    else -> "${(bytes / 1024L).coerceAtLeast(1L)} KB"
-}
-
-
-private fun formatMediaDate(value: Long): String {
-    if (value <= 0L) return "-"
-    val millis = if (value < 100_000_000_000L) value * 1000L else value
-    return SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault()).format(Date(millis))
 }

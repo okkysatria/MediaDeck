@@ -47,6 +47,7 @@ class ScannerViewModel @Inject constructor(
     private val _comicCount = MutableStateFlow(0)
     private val _galleryCount = MutableStateFlow(0)
     private val _movieCount = MutableStateFlow(0)
+    val comicCount: StateFlow<Int> = _comicCount.asStateFlow()
     private val _isScanPaused = MutableStateFlow(value = false)
     val isScanPaused: StateFlow<Boolean> = _isScanPaused.asStateFlow()
     private val _isScanActive = MutableStateFlow(value = false)
@@ -344,9 +345,9 @@ class ScannerViewModel @Inject constructor(
                                 "Scan belum lengkap: ${failedFolders.size} folder tidak dapat dibaca."
                             )
                         } else if (totalFound > 0) {
-                            translate(lang, "Scan Completed! ($totalFound items)", "Scan Selesai! ($totalFound item)")
+                            translate(lang, "Scan completed: $totalFound new items added.", "Scan selesai: $totalFound item baru ditambahkan.")
                         } else {
-                            translate(lang, "Scan Completed (0 items found). Check folder content/permissions.", "Scan Selesai (0 item ditemukan). Periksa isi folder/izin.")
+                            translate(lang, "Scan completed: no new items found.", "Scan selesai: tidak ada item baru.")
                         }
                         delay(2500.milliseconds)
                     } catch (e: Exception) {
@@ -355,11 +356,7 @@ class ScannerViewModel @Inject constructor(
                         _scanProgress.value = translate(lang, "Scan failed. Check SMB connection and folder access.", "Scan gagal. Periksa koneksi SMB dan akses folder.")
                         delay(2500.milliseconds)
                     } finally {
-                        _isScanActive.value = false
-                        _isManualRefreshing.value = false
-                        _currentScanTarget.value = null
-                        _scanProgress.value = null
-                                    MediaScannerService.stopService(appContext)
+                        finishScan()
                     }
                 }
             }
@@ -369,6 +366,13 @@ class ScannerViewModel @Inject constructor(
         _comicCount.value = 0
         _galleryCount.value = 0
         _movieCount.value = 0
+    }
+    private fun finishScan() {
+        _isScanActive.value = false
+        _isManualRefreshing.value = false
+        _currentScanTarget.value = null
+        _scanProgress.value = null
+        MediaScannerService.stopService(appContext)
     }
     private class ScanDedupeTracker {
         private val seenComics = ConcurrentHashMap.newKeySet<String>()
@@ -409,11 +413,14 @@ class ScannerViewModel @Inject constructor(
                         foldersModified?.add(MediaFolderIdentity.key(scanned.folderUri, scanned.uri))
                     }
                 } else {
-                    _galleryCount.update { it + 1 }
-                    if (!VideoThumbnailHelper.hasCachedThumbnail(context, existing.id, "gallery")) {
-                        viewModelScope.launch(Dispatchers.IO) {
-                            MediaProcessingEngine.enqueue(MediaProcessingEngine.ProcessingTask(context, existing.uri, existing.id, settings, false, "gallery") { _ -> })
-                        }
+                    viewModelScope.launch(Dispatchers.IO) {
+                        MediaProcessingEngine.enqueueMissingThumbnails(
+                            context = context,
+                            settings = settings,
+                            mediaItems = listOf(
+                                MediaProcessingEngine.ThumbnailRequest(existing.uri, existing.id, "gallery"),
+                            ),
+                        )
                     }
                 }
             }
@@ -422,7 +429,13 @@ class ScannerViewModel @Inject constructor(
                 toInsert.zip(ids).forEach { (item, id) ->
                     val finalItem = item.copy(id = id)
                     existingGallery[finalItem.uri] = finalItem
-                    viewModelScope.launch(Dispatchers.IO) { MediaProcessingEngine.enqueue(MediaProcessingEngine.ProcessingTask(context, finalItem.uri, id, settings, false, "gallery") { _ -> }) }
+                    viewModelScope.launch(Dispatchers.IO) {
+                        MediaProcessingEngine.enqueueMissingThumbnails(
+                            context = context,
+                            settings = settings,
+                            mediaItems = listOf(MediaProcessingEngine.ThumbnailRequest(finalItem.uri, id, "gallery")),
+                        )
+                    }
                 }
             }
         }
@@ -454,7 +467,6 @@ class ScannerViewModel @Inject constructor(
                         _comicCount.update { it + 1 }
                     }
                 } else {
-                    _comicCount.update { it + 1 }
                     if (scanned.totalPages > 0 && scanned.totalPages != existing.totalPages) {
                         repository.updateComic(existing.copy(totalPages = scanned.totalPages))
                     }
@@ -483,11 +495,14 @@ class ScannerViewModel @Inject constructor(
                         foldersModified?.add(MediaFolderIdentity.key(scanned.folderUri, scanned.uri))
                     }
                 } else {
-                    _movieCount.update { it + 1 }
-                    if (!VideoThumbnailHelper.hasCachedThumbnail(context, existing.id, "movie")) {
-                        viewModelScope.launch(Dispatchers.IO) {
-                            MediaProcessingEngine.enqueue(MediaProcessingEngine.ProcessingTask(context, existing.uri, existing.id, settings, false, "movie") { _ -> })
-                        }
+                    viewModelScope.launch(Dispatchers.IO) {
+                        MediaProcessingEngine.enqueueMissingThumbnails(
+                            context = context,
+                            settings = settings,
+                            mediaItems = listOf(
+                                MediaProcessingEngine.ThumbnailRequest(existing.uri, existing.id, "movie"),
+                            ),
+                        )
                     }
                 }
             }
@@ -496,7 +511,13 @@ class ScannerViewModel @Inject constructor(
                 toInsert.zip(ids).forEach { (movie, id) ->
                     val finalMovie = movie.copy(id = id)
                     existingMovies[finalMovie.uri] = finalMovie
-                    viewModelScope.launch(Dispatchers.IO) { MediaProcessingEngine.enqueue(MediaProcessingEngine.ProcessingTask(context, finalMovie.uri, id, settings, false, "movie") { _ -> }) }
+                    viewModelScope.launch(Dispatchers.IO) {
+                        MediaProcessingEngine.enqueueMissingThumbnails(
+                            context = context,
+                            settings = settings,
+                            mediaItems = listOf(MediaProcessingEngine.ThumbnailRequest(finalMovie.uri, id, "movie")),
+                        )
+                    }
                 }
             }
         }
@@ -658,9 +679,9 @@ class ScannerViewModel @Inject constructor(
                         }
                         val totalFound = _comicCount.value + _galleryCount.value + _movieCount.value
                         _scanProgress.value = if (totalFound > 0) {
-                            translate(lang, "Scan Completed! ($totalFound items)", "Scan Selesai! ($totalFound item)")
+                            translate(lang, "Scan completed: $totalFound new items added.", "Scan selesai: $totalFound item baru ditambahkan.")
                         } else {
-                            translate(lang, "Scan Completed (0 items found). Check folder content/permissions.", "Scan Selesai (0 item ditemukan). Periksa isi folder/izin.")
+                            translate(lang, "Scan completed: no new items found.", "Scan selesai: tidak ada item baru.")
                         }
                         delay(2500.milliseconds)
                     } catch (e: Exception) {
@@ -669,11 +690,7 @@ class ScannerViewModel @Inject constructor(
                         _scanProgress.value = translate(lang, "Scan failed. Check SMB connection and folder access.", "Scan gagal. Periksa koneksi SMB dan akses folder.")
                         delay(2500.milliseconds)
                     } finally {
-                        _isScanActive.value = false
-                        _isManualRefreshing.value = false
-                        _currentScanTarget.value = null
-                        _scanProgress.value = null
-                        MediaScannerService.stopService(appContext)
+                        finishScan()
                     }
                 }
             }

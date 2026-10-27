@@ -19,6 +19,7 @@ import com.mediadeck.app.ui.theme.DeckAccentBlue
 import com.mediadeck.app.ui.theme.DeckBadgeRed
 import com.mediadeck.app.ui.theme.DeckTextPrimary
 import com.mediadeck.app.util.i18n.t
+import com.mediadeck.app.util.media.MediaFormatters
 import com.mediadeck.app.viewmodel.SettingsViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -44,15 +45,6 @@ fun SystemSection(
         viewModel.messageEvent.collect { msg ->
             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
         }
-    }
-    fun formatSize(bytes: Long): String {
-        if (bytes <= 0) return "0 B"
-        if (bytes < 1024) return "$bytes B"
-        val kb = bytes / 1024.0
-        if (kb < 1024) return "%.1f KB".format(kb)
-        val mb = kb / 1024.0
-        if (mb < 1024) return "%.1f MB".format(mb)
-        return "%.2f GB".format(mb / 1024.0)
     }
     fun refreshCacheSize() {
         coroutineScope.launch(Dispatchers.IO) {
@@ -168,7 +160,7 @@ fun SystemSection(
                     Text(t("Cache utilization", "Penggunaan cache"), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = DeckAccentBlue)
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        formatSize(currentCacheSizeBytes),
+                        MediaFormatters.fileSize(currentCacheSizeBytes, unknownValue = "0 B"),
                         fontSize = 24.sp,
                         fontWeight = FontWeight.Bold,
                         color = DeckTextPrimary,

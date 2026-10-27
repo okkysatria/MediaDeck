@@ -115,6 +115,7 @@ class ComicViewModel @Inject constructor(
                 "date_asc" -> list = list.sortedBy { it.dateAdded }
                 "last_read_desc" -> list = list.sortedByDescending { it.lastReadTime }
                 "pages_desc" -> list = list.sortedByDescending { it.totalPages }
+                "pages_asc" -> list = list.sortedBy { it.totalPages }
                 "random" -> {
                     list = if (filters.shuffled == null) {
                         val newlyShuffled = list.shuffled()

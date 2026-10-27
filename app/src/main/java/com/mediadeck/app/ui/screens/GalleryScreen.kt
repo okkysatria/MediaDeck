@@ -19,14 +19,11 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.slideInHorizontally
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items as lazyRowItems
@@ -45,7 +42,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.FilterAlt
 import androidx.compose.material.icons.outlined.Folder
@@ -59,13 +55,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.ui.graphics.Shadow
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -76,8 +66,6 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import com.mediadeck.app.data.gallery.GalleryItem
@@ -85,25 +73,28 @@ import com.mediadeck.app.data.settings.AppSettings
 import com.mediadeck.app.ui.components.AsyncThumbnailImage
 import com.mediadeck.app.ui.components.DeleteConfirmationDialog
 import com.mediadeck.app.ui.components.DraggableStaggeredGridScrollbar
+import com.mediadeck.app.ui.components.FolderGroupCard
+import com.mediadeck.app.ui.components.FolderGroupListItem
 import com.mediadeck.app.ui.components.MediaDeckHeader
+import com.mediadeck.app.ui.components.MediaDeckSideSheet
+import com.mediadeck.app.ui.components.MediaOverflowMenu
+import com.mediadeck.app.ui.components.MediaEmptyState
+import com.mediadeck.app.ui.components.MediaSelectionCountTitle
+import com.mediadeck.app.ui.components.MediaSelectionDeleteButton
+import com.mediadeck.app.ui.components.MediaSelectionExitButton
+import com.mediadeck.app.util.media.MediaFormatters
+import com.mediadeck.app.ui.components.galleryInfoRows
 import com.mediadeck.app.ui.components.ScanStatusCard
+import com.mediadeck.app.ui.components.SheetActionRow
+import com.mediadeck.app.ui.components.SheetSegmented
 import com.mediadeck.app.ui.components.rememberBottomBarPadding
 import com.mediadeck.app.ui.theme.DeckBadgeRed
-import com.mediadeck.app.ui.theme.DeckAccentBlue
-import com.mediadeck.app.ui.theme.DeckSurface
-import com.mediadeck.app.ui.theme.DeckTextPrimary
-import com.mediadeck.app.ui.theme.DeckTextSecondary
 import com.mediadeck.app.util.i18n.t
 import com.mediadeck.app.util.media.MediaFolderIdentity
 import com.mediadeck.app.util.media.MediaUtils
-import com.mediadeck.app.util.media.VideoThumbnailHelper
 import com.mediadeck.app.viewmodel.GalleryViewModel
 import com.mediadeck.app.viewmodel.ScannerViewModel
 import java.io.File
-import java.text.NumberFormat
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.collectLatest
@@ -115,30 +106,6 @@ import kotlin.time.Duration.Companion.milliseconds
 
 private enum class GallerySheet { Options, Sort }
 
-
-private fun formatCount(n: Int): String = NumberFormat.getInstance().format(n)
-
-private fun formatSize(bytes: Long): String = when {
-    bytes <= 0L -> ""
-    bytes >= (1L shl 30) -> String.format(Locale.US, "%.1f GB", bytes / 1073741824.0)
-    bytes >= (1L shl 20) -> String.format(Locale.US, "%.1f MB", bytes / 1048576.0)
-    else -> "${(bytes / 1024L).coerceAtLeast(1L)} KB"
-}
-
-private val dateFormatCache = object : ThreadLocal<HashMap<String, SimpleDateFormat>>() {
-    override fun initialValue(): HashMap<String, SimpleDateFormat> = HashMap()
-}
-
-
-private fun formatDate(value: Long, withTime: Boolean): String {
-    if (value <= 0L) return ""
-    val millis = if (value < 100_000_000_000L) value * 1000L else value
-    val pattern = if (withTime) "dd MMM yyyy, HH:mm" else "dd MMM yyyy"
-    val locale = Locale.getDefault()
-    val cache = dateFormatCache.get() ?: HashMap()
-    val format = cache.getOrPut("$pattern|$locale") { SimpleDateFormat(pattern, locale) }
-    return format.format(Date(millis))
-}
 
 private val InvalidFileNameChars = Regex("[\\\\/:*?\"<>|]")
 
@@ -356,6 +323,13 @@ fun GalleryScreen(
             }
         }
     }
+    LaunchedEffect(showFolders, folderEntries) {
+        if (showFolders) {
+            folderEntries.forEach { entry ->
+                viewModel.enqueueFolderThumbnail(context, "gallery:${entry.key}", entry.covers)
+            }
+        }
+    }
     val selectedLookup = remember(selectedIds) { selectedIds.toHashSet() }
 
 
@@ -516,7 +490,7 @@ fun GalleryScreen(
         "date_desc" to t("Newest Added", "Terbaru Ditambahkan"),
         "date_asc" to t("Oldest Added", "Terlama Ditambahkan"),
         "size_desc" to t("Largest Size", "Ukuran Terbesar"),
-        "size_asc" to t("Smallest Size", "Ukuran Kecil"),
+        "size_asc" to t("Smallest Size", "Ukuran Terkecil"),
         "random" to t("Shuffle / Random", "Acak"),
     )
 
@@ -534,9 +508,7 @@ fun GalleryScreen(
                                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = t("Back", "Kembali"))
                             }
                         } else if (isMultiSelect) {
-                            IconButton(onClick = { viewModel.clearGallerySelection() }) {
-                                Icon(Icons.Default.Close, contentDescription = t("Cancel", "Batal"))
-                            }
+                            MediaSelectionExitButton(onClick = { viewModel.clearGallerySelection() })
                         }
                     },
                     title = {
@@ -574,19 +546,17 @@ fun GalleryScreen(
                                     .focusRequester(focusRequester),
                             )
                         } else {
-                            Text(t("${selectedIds.size} Selected", "${selectedIds.size} Terpilih"), fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                            MediaSelectionCountTitle(selectedIds.size)
                         }
                     },
                     actions = {
                         if (isMultiSelect) {
-                            IconButton(onClick = { showDeleteConfirmDialog = true }) {
-                                Icon(Icons.Default.Delete, contentDescription = t("Delete", "Hapus"), tint = DeckBadgeRed)
-                            }
+                            MediaSelectionDeleteButton(onClick = { showDeleteConfirmDialog = true })
                         }
                     }
                 )
             } else {
-                val itemsCountText = formatCount(items.size)
+                val itemsCountText = MediaFormatters.count(items.size)
                 val subtitle = t("$itemsCountText items", "$itemsCountText media")
                 MediaDeckHeader(
                     icon = Icons.Outlined.Image,
@@ -636,36 +606,15 @@ fun GalleryScreen(
                 )
 
                 if (items.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                            .verticalScroll(rememberScrollState()),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center,
-                        ) {
-                            val hasActiveFilter = search.isNotEmpty() || selectedTags.isNotEmpty() ||
-                                    selectedFolderName != null || isFavoriteFilterActive
-                            Text(
-                                if (hasActiveFilter) t("No results", "Tidak ada hasil")
-                                else t("No media found", "Media tidak ditemukan")
-                            )
-                            if (!hasActiveFilter) {
-                                Spacer(modifier = Modifier.height(16.dp))
-                                FloatingActionButton(
-                                    onClick = onNavigateToScan,
-                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                                    shape = RoundedCornerShape(16.dp),
-                                ) {
-                                    Icon(Icons.Default.Add, contentDescription = t("Add Folder", "Tambah Folder"))
-                                }
-                            }
-                        }
-                    }
+                    val hasActiveFilter = search.isNotEmpty() || selectedTags.isNotEmpty() ||
+                            selectedFolderName != null || isFavoriteFilterActive
+                    MediaEmptyState(
+                        title = if (hasActiveFilter) t("No results", "Tidak ada hasil")
+                        else t("No media found", "Media tidak ditemukan"),
+                        modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+                        actionLabel = if (!hasActiveFilter) t("Add Folder", "Tambah Folder") else null,
+                        onAction = onNavigateToScan.takeIf { !hasActiveFilter },
+                    )
                 } else {
                     val bottomBarPadding = rememberBottomBarPadding(16.dp)
                     val isTitleOnly = settings.layoutMode == "title_only"
@@ -718,9 +667,24 @@ fun GalleryScreen(
                                         rowEntries.forEach { entry ->
                                             Box(modifier = Modifier.weight(1f)) {
                                                 if (isTitleOnly) {
-                                                    FolderListRow(entry = entry, settings = settings, onClick = onFolderClick)
+                                                    FolderGroupListItem(
+                                                        folderName = entry.label,
+                                                        countLabel = t("${entry.count} items", "${entry.count} item"),
+                                                        folderKey = "gallery:${entry.key}",
+                                                        processingKey = "gallery:${entry.key}",
+                                                        supportingLabel = remember(entry.latestDate) {
+                                                            MediaFormatters.dateTime(entry.latestDate, withTime = false)
+                                                        },
+                                                        onClick = { onFolderClick(entry.key) },
+                                                    )
                                                 } else {
-                                                    FolderCard(entry = entry, settings = settings, onClick = onFolderClick)
+                                                    FolderGroupCard(
+                                                        folderKey = "gallery:${entry.key}",
+                                                        folderName = entry.label,
+                                                        countLabel = t("${entry.count} items", "${entry.count} item"),
+                                                        processingKey = "gallery:${entry.key}",
+                                                        onClick = { onFolderClick(entry.key) },
+                                                    )
                                                 }
                                             }
                                         }
@@ -775,15 +739,26 @@ fun GalleryScreen(
     }
 
 
-    activeSheet?.let { sheet ->
-        GallerySideSheet(
-            title = if (sheet == GallerySheet.Options) t("Gallery Options", "Opsi Galeri") else t("Sort Gallery", "Urutkan Galeri"),
+    if (activeSheet == GallerySheet.Sort) {
+        val sortGroups = listOf(
+            listOf("name_asc", "name_desc"),
+            listOf("date_desc", "date_asc"),
+            listOf("size_desc", "size_asc"),
+            listOf("random"),
+        ).map { group -> group.map { key -> key to sortLabels.getValue(key) } }
+        MediaDeckSideSheet(
+            title = t("Sort Gallery", "Urutkan Galeri"),
+            currentSort = sortOption,
+            sortGroups = sortGroups,
+            onSortSelected = { viewModel.setGallerySort(it); activeSheet = null },
             onDismiss = { activeSheet = null },
-            onBack = if (sheet == GallerySheet.Sort) {
-                { activeSheet = GallerySheet.Options }
-            } else null,
+            onBack = { activeSheet = GallerySheet.Options },
+        )
+    } else if (activeSheet == GallerySheet.Options) {
+        MediaDeckSideSheet(
+            title = t("Gallery Options", "Opsi Galeri"),
+            onDismiss = { activeSheet = null },
         ) {
-            if (sheet == GallerySheet.Options) {
                 SheetSectionLabel(t("View", "Tampilan"))
                 SheetSegmented(
                     options = listOf("grid" to t("Grid", "Grid"), "title_only" to t("List", "Daftar")),
@@ -833,43 +808,6 @@ fun GalleryScreen(
                         onClick = { viewModel.startGalleryMultiSelect(); activeSheet = null },
                     )
                 }
-            } else {
-                val groups = listOf(
-                    listOf("name_asc", "name_desc"),
-                    listOf("date_desc", "date_asc"),
-                    listOf("size_desc", "size_asc"),
-                    listOf("random"),
-                )
-                groups.forEachIndexed { index, group ->
-                    if (index > 0) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant,
-                        )
-                    }
-                    group.forEach { key ->
-                        val selected = sortOption == key
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else Color.Transparent)
-                                .clickable { viewModel.setGallerySort(key); activeSheet = null }
-                                .padding(horizontal = 12.dp)
-                                .height(52.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            RadioButton(selected = selected, onClick = null)
-                            Spacer(Modifier.width(16.dp))
-                            Text(
-                                sortLabels[key].orEmpty(),
-                                fontSize = 16.sp,
-                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                            )
-                        }
-                    }
-                }
-            }
         }
     }
 }
@@ -971,244 +909,6 @@ private fun TagChip(tag: String, countText: String, selected: Boolean, onClick: 
 
 
 @Composable
-private fun FolderMosaic(covers: List<GalleryItem>, settings: AppSettings, modifier: Modifier = Modifier) {
-    val placeholder = MaterialTheme.colorScheme.surfaceContainerHighest
-    if (covers.isEmpty() || covers.none { it.hasThumbnail }) {
-        Box(
-            modifier = modifier.background(placeholder),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.Folder,
-                contentDescription = null,
-                tint = DeckAccentBlue,
-                modifier = Modifier.size(40.dp),
-            )
-        }
-        return
-    }
-    if (covers.size == 1) {
-        val cover = covers.first()
-        Box(modifier.background(placeholder)) {
-            AsyncThumbnailImage(
-                uriString = cover.uri,
-                mediaId = cover.id,
-                hasThumbnail = cover.hasThumbnail,
-                settings = settings,
-                thumbnailVariant = "gallery",
-                showProcessingIndicator = false,
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
-        return
-    }
-    Column(modifier.background(MaterialTheme.colorScheme.surface), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        for (row in 0..1) {
-            Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                for (col in 0..1) {
-                    val cover = covers.getOrNull(row * 2 + col)
-                    Box(Modifier.weight(1f).fillMaxHeight().background(placeholder)) {
-                        if (cover != null) {
-                            AsyncThumbnailImage(
-                                uriString = cover.uri,
-                                mediaId = cover.id,
-                                hasThumbnail = cover.hasThumbnail,
-                                settings = settings,
-                                thumbnailVariant = "gallery",
-                                showProcessingIndicator = false,
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun FolderCard(
-    entry: FolderEntry,
-    settings: AppSettings,
-    onClick: (String) -> Unit,
-) {
-    val countLabel = t("${entry.count} items", "${entry.count} item")
-    val shape = RoundedCornerShape(16.dp)
-    val isProcessing by remember(entry.key) {
-        VideoThumbnailHelper.folderThumbnailProcessingState("gallery|${entry.key}")
-    }.collectAsState()
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(4f / 3f)
-            .clip(shape)
-            .clickable { onClick(entry.key) },
-    ) {
-        FolderMosaic(
-            covers = entry.covers,
-            settings = settings,
-            modifier = Modifier.fillMaxSize(),
-        )
-
-        if (isProcessing) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.5f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(28.dp),
-                    strokeWidth = 2.5.dp,
-                    color = DeckAccentBlue,
-                )
-            }
-        }
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.BottomCenter)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color.Transparent,
-                            Color.Black.copy(alpha = 0.45f),
-                            Color.Black.copy(alpha = 0.85f),
-                        ),
-                    ),
-                )
-                .padding(horizontal = 10.dp, vertical = 8.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Text(
-                    text = entry.label,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = LocalTextStyle.current.copy(
-                        shadow = Shadow(
-                            color = Color.Black.copy(alpha = 0.9f),
-                            offset = Offset(0f, 1f),
-                            blurRadius = 3f,
-                        ),
-                    ),
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    text = countLabel,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color.White.copy(alpha = 0.9f),
-                    style = LocalTextStyle.current.copy(
-                        shadow = Shadow(
-                            color = Color.Black.copy(alpha = 0.9f),
-                            offset = Offset(0f, 1f),
-                            blurRadius = 3f,
-                        ),
-                    ),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun FolderListRow(
-    entry: FolderEntry,
-    settings: AppSettings,
-    onClick: (String) -> Unit,
-) {
-    val countLabel = t("${entry.count} items", "${entry.count} item")
-    val dateLabel = remember(entry.latestDate) { formatDate(entry.latestDate, withTime = false) }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .clickable { onClick(entry.key) }
-            .padding(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        FolderMosaic(entry.covers, settings, Modifier.size(72.dp).clip(RoundedCornerShape(14.dp)))
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text(entry.label, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(countLabel, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-            if (dateLabel.isNotEmpty()) {
-                Text(dateLabel, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-            }
-        }
-        Icon(
-            Icons.Default.ChevronRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 8.dp),
-        )
-    }
-}
-
-
-@Composable
-private fun ItemDropdown(
-    onDismiss: () -> Unit,
-    isFavorite: Boolean,
-    onFavorite: (() -> Unit)?,
-    onDownload: (() -> Unit)?,
-    onDelete: () -> Unit,
-) {
-    DropdownMenu(
-        expanded = true,
-        onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(16.dp),
-        containerColor = DeckSurface,
-    ) {
-        if (onFavorite != null) {
-            DropdownMenuItem(
-                text = {
-                    Text(
-                        if (isFavorite) t("Remove from Favorites", "Hapus dari Favorit")
-                        else t("Add to Favorites", "Tambah ke Favorit"),
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = DeckTextPrimary,
-                    )
-                },
-                leadingIcon = {
-                    Icon(
-                        imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                        contentDescription = null,
-                        tint = if (isFavorite) DeckBadgeRed else DeckTextSecondary,
-                        modifier = Modifier.size(18.dp),
-                    )
-                },
-                onClick = { onDismiss(); onFavorite() },
-            )
-        }
-        if (onDownload != null) {
-            DropdownMenuItem(
-                text = { Text(t("Download", "Unduh"), fontSize = 14.sp, fontWeight = FontWeight.Medium, color = DeckTextPrimary) },
-                leadingIcon = { Icon(Icons.Default.Download, null, tint = DeckTextPrimary, modifier = Modifier.size(18.dp)) },
-                onClick = { onDismiss(); onDownload() },
-            )
-        }
-        DropdownMenuItem(
-            text = { Text(t("Delete", "Hapus"), fontSize = 14.sp, fontWeight = FontWeight.Medium, color = DeckBadgeRed) },
-            leadingIcon = { Icon(Icons.Outlined.Delete, null, tint = DeckBadgeRed, modifier = Modifier.size(18.dp)) },
-            onClick = { onDismiss(); onDelete() },
-        )
-    }
-}
-
-
-@Composable
 fun GalleryCard(
     item: GalleryItem,
     isSelected: Boolean,
@@ -1264,7 +964,6 @@ private fun GalleryCardContent(
     }
 
     var aspectState by remember(item.id, item.width, item.height) { mutableFloatStateOf(initialRatio) }
-    var showMenu by remember { mutableStateOf(false) }
     val shape = remember { RoundedCornerShape(16.dp) }
 
     Box(
@@ -1356,26 +1055,17 @@ private fun GalleryCardContent(
             }
             if (!isMultiSelect) {
                 Box(modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp)) {
-                    IconButton(
-                        onClick = { showMenu = true },
-                        modifier = Modifier.size(34.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-                    if (showMenu) {
-                        ItemDropdown(
-                            onDismiss = { showMenu = false },
-                            isFavorite = item.isFavorite,
-                            onFavorite = onFavorite?.let { cb -> { cb(item) } },
-                            onDownload = onDownload?.let { cb -> { cb(item) } },
-                            onDelete = { onDelete(item) },
-                        )
-                    }
+                    MediaOverflowMenu(
+                        isFavorite = item.isFavorite,
+                        infoTitle = item.name,
+                        infoRows = galleryInfoRows(item),
+                        onFavorite = { onFavorite?.invoke(item) },
+                        onDownload = onDownload?.let { callback -> { callback(item) } },
+                        onDelete = { onDelete(item) },
+                        buttonSize = 34.dp,
+                        iconSize = 20.dp,
+                        iconTint = Color.White,
+                    )
                 }
             }
             if (isMultiSelect) {
@@ -1443,14 +1133,13 @@ private fun GalleryListItemContent(
             item.mimeType.substringAfter('/', "").uppercase()
         }
         listOf(
-            formatSize(item.size),
+            MediaFormatters.fileSize(item.size, unknownValue = ""),
             resolution,
             if (isVideo && item.duration > 0) MediaUtils.formatDuration(item.duration) else "",
         ).filter { it.isNotBlank() }.joinToString(" · ")
     }
-    val dateLabel = remember(item.dateAdded) { formatDate(item.dateAdded, withTime = true) }
+    val dateLabel = remember(item.dateAdded) { MediaFormatters.dateTime(item.dateAdded, withTime = true) }
     val title = remember(item.id, item.name, item.mimeType) { item.name.ifBlank { resolveDisplayName(item) } }
-    var showMenu by remember { mutableStateOf(false) }
     val shape = remember { RoundedCornerShape(20.dp) }
     val subtle = MaterialTheme.colorScheme.onSurfaceVariant
 
@@ -1503,101 +1192,20 @@ private fun GalleryListItemContent(
                     modifier = Modifier.size(22.dp),
                 )
             }
-            Box {
-                IconButton(onClick = { showMenu = true }, modifier = Modifier.size(34.dp)) {
-                    Icon(Icons.Default.MoreVert, null, tint = subtle)
-                }
-                if (showMenu) {
-                    ItemDropdown(
-                        onDismiss = { showMenu = false },
-                        isFavorite = item.isFavorite,
-                        onFavorite = onFavorite?.let { cb -> { cb(item) } },
-                        onDownload = onDownload?.let { cb -> { cb(item) } },
-                        onDelete = { onDelete(item) },
-                    )
-                }
-            }
+            MediaOverflowMenu(
+                isFavorite = item.isFavorite,
+                infoTitle = item.name,
+                infoRows = galleryInfoRows(item),
+                onFavorite = { onFavorite?.invoke(item) },
+                onDownload = onDownload?.let { callback -> { callback(item) } },
+                onDelete = { onDelete(item) },
+                buttonSize = 34.dp,
+                iconSize = 20.dp,
+            )
         }
     }
 }
 
-
-@Composable
-fun GallerySideSheet(
-    title: String,
-    onDismiss: () -> Unit,
-    onBack: (() -> Unit)? = null,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
-    ) {
-        var visible by remember { mutableStateOf(false) }
-        LaunchedEffect(Unit) { visible = true }
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = onDismiss,
-                ),
-        ) {
-            AnimatedVisibility(
-                visible = visible,
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .fillMaxHeight()
-                    .fillMaxWidth(0.78f)
-                    .widthIn(max = 360.dp),
-                enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
-            ) {
-                Surface(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .pointerInput(Unit) { detectTapGestures { } },
-                    shape = RectangleShape,
-                    color = MaterialTheme.colorScheme.surface,
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .windowInsetsPadding(WindowInsets.systemBars)
-                            .verticalScroll(rememberScrollState())
-                            .padding(horizontal = 20.dp, vertical = 16.dp),
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            if (onBack != null) {
-                                IconButton(onClick = onBack) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                        contentDescription = t("Back", "Kembali"),
-                                    )
-                                }
-                                Spacer(Modifier.width(4.dp))
-                            }
-                            Text(
-                                title,
-                                fontSize = 22.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.weight(1f),
-                            )
-                            IconButton(onClick = onDismiss) {
-                                Icon(Icons.Default.Close, contentDescription = t("Close", "Tutup"))
-                            }
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        content()
-                    }
-                }
-            }
-        }
-    }
-}
 
 @Composable
 fun SheetSectionLabel(text: String) {
@@ -1609,61 +1217,4 @@ fun SheetSectionLabel(text: String) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
     )
-}
-
-@Composable
-fun SheetSegmented(options: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .padding(4.dp),
-    ) {
-        options.forEach { (key, label) ->
-            val isSelected = key == selected
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(44.dp)
-                    .clip(CircleShape)
-                    .background(if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent)
-                    .clickable { onSelect(key) },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    label,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun SheetActionRow(
-    icon: ImageVector,
-    label: String,
-    onClick: () -> Unit,
-    tint: Color = DeckAccentBlue,
-    labelColor: Color = DeckTextPrimary,
-    trailing: (@Composable () -> Unit)? = null,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(DeckSurface)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp)
-            .height(52.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
-        Spacer(Modifier.width(16.dp))
-        Text(label, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = labelColor, modifier = Modifier.weight(1f))
-        trailing?.invoke()
-    }
 }

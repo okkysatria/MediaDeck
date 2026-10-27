@@ -74,14 +74,14 @@ class SmbDataSource(private val context: Context) : BaseDataSource(true) {
                 prefetchJob = null
             } else {
                 cancelPrefetch()
-            val readSize = minOf(nextBufferSize.toLong(), minOf(totalLength - currentPos, bytesRemaining)).toInt()
+                val readSize = minOf(nextBufferSize.toLong(), minOf(totalLength - currentPos, bytesRemaining)).toInt()
                 if (readSize <= 0) return C.RESULT_END_OF_INPUT
                 if (currentBuffer.size < readSize) currentBuffer = ByteArray(readSize)
                 val read = readSmbAt(raf, currentPos, currentBuffer, readSize)
                 if (read == -1) return C.RESULT_END_OF_INPUT
                 currentBufferStart = currentPos
                 currentBufferLength = read
-            nextBufferSize = steadyBufferSize
+                nextBufferSize = steadyBufferSize
             }
         }
         val offsetInBuffer = (currentPos - currentBufferStart).toInt()

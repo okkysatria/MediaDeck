@@ -162,6 +162,12 @@ object MediaProcessingEngine {
         val thumbnailVariant: String = "explore",
         val onComplete: (resolution: String) -> Unit,
     )
+    data class ThumbnailRequest(
+        val uri: String,
+        val mediaId: Long,
+        val variant: String,
+        val sortKey: String? = null,
+    )
     data class FolderMosaicTask(
         val context: Context,
         val folderKey: String,
@@ -191,6 +197,34 @@ object MediaProcessingEngine {
             queuedNormalUris.remove(taskKey)
             throw e
         }
+    }
+    suspend fun enqueueMissingThumbnails(
+        context: Context,
+        settings: AppSettings,
+        mediaItems: Iterable<ThumbnailRequest>,
+        folderKey: String? = null,
+    ): Int {
+        val missingTasks = mediaItems.asSequence()
+            .filterNot { VideoThumbnailHelper.hasCachedThumbnail(context, it.mediaId, it.variant) }
+            .let { requests ->
+                if (folderKey == null) requests else requests.sortedBy { it.sortKey.orEmpty() }
+            }
+            .map { item ->
+                ProcessingTask(
+                    context = context,
+                    uri = item.uri,
+                    mediaId = item.mediaId,
+                    settings = settings,
+                    thumbnailVariant = item.variant,
+                ) { _ -> }
+            }
+            .toList()
+        if (folderKey == null) {
+            missingTasks.forEach { enqueue(it) }
+        } else {
+            enqueueFolderMediaBatch(folderKey, missingTasks)
+        }
+        return missingTasks.size
     }
     suspend fun enqueuePriority(task: ProcessingTask, force: Boolean = false) {
         val taskKey = mediaTaskKey(task)
@@ -422,10 +456,22 @@ object MediaProcessingEngine {
     }
     private suspend fun processFolderTask(task: FolderMosaicTask) {
         val bitmaps = mutableListOf<android.graphics.Bitmap>()
+        VideoThumbnailHelper.setFolderThumbnailProcessing(task.folderKey, true)
         try {
-            task.mediaItems.firstOrNull()?.third?.let { awaitFolderBatchTurn(it) }
             Log.d("MediaProcessingEngine", "Generating mosaic for folder: ${task.folderKey}")
             for ((uri, mediaId, thumbnailVariant) in task.mediaItems.take(4)) {
+                val processingTask = ProcessingTask(
+                    context = task.context,
+                    uri = uri,
+                    mediaId = mediaId,
+                    settings = task.settings,
+                    thumbnailVariant = thumbnailVariant,
+                ) { _ -> }
+                if (thumbnailVariant == "movie") {
+                    processTask(processingTask)
+                } else if (!VideoThumbnailHelper.hasCachedThumbnail(task.context, mediaId, thumbnailVariant)) {
+                    processFolderMediaTask(processingTask)
+                }
                 val bmp = VideoThumbnailHelper.loadThumbnail(
                     task.context,
                     uri,
@@ -447,6 +493,8 @@ object MediaProcessingEngine {
             }
         } catch (e: Exception) {
             Log.e("MediaProcessingEngine", "Gagal memproses mosaic folder ${task.folderKey}", e)
+        } finally {
+            VideoThumbnailHelper.setFolderThumbnailProcessing(task.folderKey, false)
         }
     }
     private suspend fun awaitFolderBatchTurn(variant: String) {

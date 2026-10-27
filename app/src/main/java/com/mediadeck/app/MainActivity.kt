@@ -32,6 +32,7 @@ import com.mediadeck.app.viewmodel.GalleryViewModel
 import com.mediadeck.app.viewmodel.MovieViewModel
 import com.mediadeck.app.viewmodel.ScannerViewModel
 import com.mediadeck.app.viewmodel.SettingsViewModel
+import androidx.media3.common.util.UnstableApi
 import dagger.hilt.android.AndroidEntryPoint
 import kotlin.time.Duration.Companion.seconds
 @AndroidEntryPoint
@@ -60,6 +61,7 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+    @UnstableApi
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()

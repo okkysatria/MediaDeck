@@ -11,6 +11,7 @@ import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.media.AudioManager
 import android.net.Uri
+import android.provider.Settings
 import android.provider.OpenableColumns
 import android.util.TypedValue
 import androidx.activity.compose.BackHandler
@@ -55,7 +56,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
@@ -67,9 +67,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.material3.LocalTextStyle
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -135,7 +132,7 @@ private object PlayerDefaults {
     const val GESTURE_INDICATOR_VISIBLE_MS = 1200L
     const val SEEK_STEP_MS = 10_000L
     const val RESUME_PROMPT_THRESHOLD_MS = 1000L
-    const val DRAG_SEEK_RANGE_SECONDS = 120
+    const val DRAG_SEEK_RANGE_MS = 120_000L
     const val SMB_MIN_BUFFER_MS = 5_000
     const val LOCAL_MIN_BUFFER_MS = 15_000
     const val LOCAL_MAX_BUFFER_MS = 50_000
@@ -150,6 +147,8 @@ fun VideoPlayerScreen(
     onClose: () -> Unit,
 ) {
     val context = LocalContext.current
+    val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
+    val maxVolume = remember { audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }
     val scope = rememberCoroutineScope()
     val activity = context as? Activity
     val settings by viewModel.appSettings.collectAsState()
@@ -207,10 +206,10 @@ fun VideoPlayerScreen(
         }
     }
     var gestureType by remember { mutableStateOf(GestureType.NONE) }
-    var gestureVolumeVal by remember { mutableIntStateOf(0) }
+    var gestureVolumeVal by remember { mutableFloatStateOf(100f) }
     var gestureBrightnessVal by remember { mutableIntStateOf(0) }
     var gestureSeekTime by remember { mutableLongStateOf(0L) }
-    var gestureSeekDelta by remember { mutableIntStateOf(0) }
+    var gestureSeekDeltaMs by remember { mutableLongStateOf(0L) }
     var doubleTapDelta by remember { mutableIntStateOf(0) }
     var doubleTapJob by remember { mutableStateOf<Job?>(null) }
     var showResumeDialog by remember { mutableStateOf(movie.lastPlayedPosition > PlayerDefaults.RESUME_PROMPT_THRESHOLD_MS) }
@@ -241,8 +240,6 @@ fun VideoPlayerScreen(
     val latestPlaybackMode by rememberUpdatedState(playbackMode)
     val latestVideoPlaylist by rememberUpdatedState(videoPlaylist)
     val latestCurrentMovieIndex by rememberUpdatedState(currentMovieIndex)
-    val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
-    val maxVolume = remember { audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }
     LaunchedEffect(movie.id) {
         selectedAudioTrack = movie.audioTrackIndex
         selectedSubtitleTrack = movie.subtitleTrackIndex
@@ -278,7 +275,7 @@ fun VideoPlayerScreen(
     val isExternalSubtitleSelected = selectedSubtitleInfo?.externalSubtitleUri != null
     LaunchedEffect(activeSubtitleUri) {
         subtitleCues = activeSubtitleUri?.let { uri ->
-            withContext(Dispatchers.IO) { loadSubtitleCues(context, Uri.parse(uri)) }
+                withContext(Dispatchers.IO) { loadSubtitleCues(context, uri.toUri()) }
         }.orEmpty()
     }
     val pausedPositionKey = if (isPlaying) -1L else currentPosition
@@ -427,6 +424,7 @@ fun VideoPlayerScreen(
                         }
                         PlaybackMode.OFF -> Unit
                     }
+                    Player.STATE_BUFFERING, Player.STATE_IDLE -> Unit
                 }
             }
         }
@@ -525,10 +523,12 @@ fun VideoPlayerScreen(
                     durationMs = { duration },
                     onGestureTypeChange = { gestureType = it },
                     onBrightnessChange = { gestureBrightnessVal = it },
-                    onVolumeChange = { gestureVolumeVal = it },
-                    onSeekPreview = { seekTimeMs, deltaSeconds ->
+                    onVolumeChange = { volume ->
+                        gestureVolumeVal = volume.coerceIn(0f, 100f)
+                    },
+                    onSeekPreview = { seekTimeMs, deltaMs ->
                         gestureSeekTime = seekTimeMs
-                        gestureSeekDelta = deltaSeconds
+                        gestureSeekDeltaMs = deltaMs
                         currentPosition = seekTimeMs
                     },
                     onSeekCommit = {
@@ -536,7 +536,7 @@ fun VideoPlayerScreen(
                         currentPosition = gestureSeekTime
                     },
                     onSeekCancel = {
-                        gestureSeekDelta = 0
+                        gestureSeekDeltaMs = 0L
                         currentPosition = player?.currentPosition ?: currentPosition
                     },
                 ),
@@ -563,7 +563,8 @@ fun VideoPlayerScreen(
             volumePercent = gestureVolumeVal,
             brightnessPercent = gestureBrightnessVal,
             seekTimeMs = gestureSeekTime,
-            seekDeltaSeconds = gestureSeekDelta,
+            durationMs = duration,
+            seekDeltaMs = gestureSeekDeltaMs,
             doubleTapDeltaSeconds = doubleTapDelta,
             modifier = Modifier.align(Alignment.Center),
         )
@@ -815,7 +816,7 @@ private fun buildExoPlayer(
             var hasExternalSubtitle = false
             movie.subtitleUri?.let { subtitleUriString ->
                 if (isSubtitleUriAccessible(subtitleUriString)) {
-                    val subtitleUri = Uri.parse(subtitleUriString)
+                    val subtitleUri = subtitleUriString.toUri()
                     val subtitleConfig = MediaItem.SubtitleConfiguration.Builder(subtitleUri)
                         .setMimeType(getMimeType(context, subtitleUri))
                         .setLabel(getDocumentDisplayName(context, subtitleUri).substringBeforeLast('.'))
@@ -930,8 +931,8 @@ private fun Modifier.playerDragGestures(
     durationMs: () -> Long,
     onGestureTypeChange: (GestureType) -> Unit,
     onBrightnessChange: (Int) -> Unit,
-    onVolumeChange: (Int) -> Unit,
-    onSeekPreview: (seekTimeMs: Long, deltaSeconds: Int) -> Unit,
+    onVolumeChange: (Float) -> Unit,
+    onSeekPreview: (seekTimeMs: Long, deltaMs: Long) -> Unit,
     onSeekCommit: () -> Unit,
     onSeekCancel: () -> Unit,
 ): Modifier = pointerInput(isLocked) {
@@ -939,6 +940,7 @@ private fun Modifier.playerDragGestures(
     var activeGesture = GestureType.NONE
     var isLeftSide = false
     var startVolume = 0
+    var lastAppliedVolume = 0
     var startBrightness = 0.5f
     var startPositionMs = 0L
     var totalDragX = 0f
@@ -948,8 +950,16 @@ private fun Modifier.playerDragGestures(
             activeGesture = GestureType.NONE
             isLeftSide = offset.x < size.width / 2f
             startVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-            val brightness = activity?.window?.attributes?.screenBrightness ?: -1f
-            startBrightness = if (brightness < 0f) 0.5f else brightness
+            lastAppliedVolume = startVolume
+            val windowBrightness = activity?.window?.attributes?.screenBrightness ?: -1f
+            startBrightness = if (windowBrightness >= 0f) {
+                windowBrightness
+            } else {
+                val systemBrightness = activity?.let {
+                    Settings.System.getInt(it.contentResolver, Settings.System.SCREEN_BRIGHTNESS, 128)
+                } ?: 128
+                (systemBrightness / 255f).coerceIn(0.01f, 1f)
+            }
             startPositionMs = currentPositionMs()
             totalDragX = 0f
             totalDragY = 0f
@@ -980,7 +990,7 @@ private fun Modifier.playerDragGestures(
             when (activeGesture) {
                 GestureType.BRIGHTNESS -> {
                     totalDragY += dragAmount.y
-                    val newBrightness = (startBrightness - totalDragY / size.height).coerceIn(0.01f, 1f)
+                    val newBrightness = (startBrightness - totalDragY / (size.height * 1.25f)).coerceIn(0.01f, 1f)
                     val layoutParams = activity?.window?.attributes
                     layoutParams?.screenBrightness = newBrightness
                     if (layoutParams != null) activity.window.attributes = layoutParams
@@ -988,16 +998,24 @@ private fun Modifier.playerDragGestures(
                 }
                 GestureType.VOLUME -> {
                     totalDragY += dragAmount.y
-                    val volumeDelta = (-totalDragY / size.height * maxVolume).roundToInt()
-                    val newVolume = (startVolume + volumeDelta).coerceIn(0, maxVolume)
-                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVolume, 0)
-                    onVolumeChange(if (maxVolume > 0) ((newVolume.toFloat() / maxVolume) * 100).toInt() else 0)
+                    val volumeFraction = (abs(totalDragY) / size.height).coerceIn(0f, 1f)
+                    val volumeValue = (if (totalDragY < 0f) {
+                        startVolume + volumeFraction * (maxVolume - startVolume)
+                    } else {
+                        startVolume - volumeFraction * startVolume
+                    }).coerceIn(0f, maxVolume.toFloat())
+                    val nextVolume = volumeValue.roundToInt()
+                    if (nextVolume != lastAppliedVolume) {
+                        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, nextVolume, 0)
+                        lastAppliedVolume = nextVolume
+                    }
+                    onVolumeChange(if (maxVolume > 0) volumeValue / maxVolume * 100f else 0f)
                 }
                 GestureType.SEEK -> {
                     totalDragX += dragAmount.x
-                    val deltaSeconds = (totalDragX / size.width * PlayerDefaults.DRAG_SEEK_RANGE_SECONDS).toInt()
-                    val seekTime = (startPositionMs + deltaSeconds * 1000L).coerceIn(0L, durationMs())
-                    onSeekPreview(seekTime, deltaSeconds)
+                    val deltaMs = (totalDragX / size.width * PlayerDefaults.DRAG_SEEK_RANGE_MS).toLong()
+                    val seekTime = (startPositionMs + deltaMs).coerceIn(0L, durationMs())
+                    onSeekPreview(seekTime, deltaMs)
                 }
                 else -> Unit
             }
@@ -1010,7 +1028,7 @@ private fun PlayerSurface(player: ExoPlayer, zoomMode: Int, subtitleSize: Float,
         modifier = Modifier.fillMaxSize().testTag("movie_player_view"),
         factory = { ctx ->
             val view = android.view.LayoutInflater.from(ctx)
-                .inflate(R.layout.exo_player_texture_view, null) as PlayerView
+                .inflate(R.layout.exo_player_texture_view, android.widget.FrameLayout(ctx), false) as PlayerView
             view.apply {
                 setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
                 this.player = player
@@ -1064,10 +1082,11 @@ private fun EndedOverlay(onReplay: () -> Unit) {
 private fun GestureIndicatorOverlay(
     gestureType: GestureType,
     isVisible: Boolean,
-    volumePercent: Int,
+    volumePercent: Float,
     brightnessPercent: Int,
     seekTimeMs: Long,
-    seekDeltaSeconds: Int,
+    durationMs: Long,
+    seekDeltaMs: Long,
     doubleTapDeltaSeconds: Int,
     modifier: Modifier = Modifier,
 ) {
@@ -1077,88 +1096,120 @@ private fun GestureIndicatorOverlay(
         exit = fadeOut() + scaleOut(targetScale = 0.85f),
         modifier = modifier,
     ) {
-        Box(
-            modifier = Modifier.sizeIn(minWidth = 100.dp, minHeight = 100.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            val controlColor = Color.White
-            Column(
-                modifier = Modifier.padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                when (gestureType) {
-                    GestureType.VOLUME -> {
-                        val icon = when {
-                            volumePercent == 0 -> Icons.AutoMirrored.Filled.VolumeOff
-                            volumePercent < 50 -> Icons.AutoMirrored.Filled.VolumeDown
-                            else -> Icons.AutoMirrored.Filled.VolumeUp
-                        }
-                        GestureProgressIndicator(icon, volumePercent)
+        when (gestureType) {
+                GestureType.VOLUME -> {
+                    val icon = when {
+                        volumePercent == 0f -> Icons.AutoMirrored.Filled.VolumeOff
+                        volumePercent < 50 -> Icons.AutoMirrored.Filled.VolumeDown
+                        else -> Icons.AutoMirrored.Filled.VolumeUp
                     }
-                    GestureType.BRIGHTNESS -> {
-                        GestureProgressIndicator(Icons.Default.LightMode, brightnessPercent)
-                    }
-                    GestureType.SEEK -> {
-                        val sign = if (seekDeltaSeconds >= 0) "+" else ""
+                    GestureLevelIndicator(icon, volumePercent)
+                }
+                GestureType.BRIGHTNESS -> GestureLevelIndicator(Icons.Default.LightMode, brightnessPercent.toFloat())
+                GestureType.SEEK -> {
+                    val sign = if (seekDeltaMs >= 0L) "+" else "−"
+                    val deltaLabel = String.format(Locale.US, "%s%.1f s", sign, abs(seekDeltaMs) / 1000f)
+                    val progress = if (durationMs > 0L) {
+                        (seekTimeMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
+                    } else 0f
+                    Column(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(7.dp),
+                    ) {
                         Text(
-                            formatTime(seekTimeMs),
-                            color = controlColor,
-                            fontWeight = FontWeight.Black,
+                            formatSeekPreviewTime(seekTimeMs),
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
                             fontSize = 26.sp,
-                            style = LocalTextStyle.current.copy(
-                                shadow = Shadow(color = Color.Black.copy(alpha = 0.85f), offset = Offset(0f, 2f), blurRadius = 4f),
-                            ),
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
                         Surface(
                             color = MaterialTheme.colorScheme.primary,
-                            shape = RoundedCornerShape(6.dp)
+                            shape = RoundedCornerShape(50),
                         ) {
                             Text(
-                                "$sign$seekDeltaSeconds s",
+                                deltaLabel,
                                 color = MaterialTheme.colorScheme.onPrimary,
-                                fontSize = 12.sp,
+                                fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
                             )
                         }
+                        GestureProgressTrack(progress)
                     }
-                    GestureType.DOUBLE_TAP_LEFT -> {
-                        Icon(Icons.Default.FastRewind, contentDescription = null, tint = controlColor, modifier = Modifier.size(40.dp))
-                        Text("${abs(doubleTapDeltaSeconds)}s", color = controlColor, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    }
-                    GestureType.DOUBLE_TAP_RIGHT -> {
-                        Icon(Icons.Default.FastForward, contentDescription = null, tint = controlColor, modifier = Modifier.size(40.dp))
-                        Text("${doubleTapDeltaSeconds}s", color = controlColor, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    }
-                    GestureType.NONE -> Unit
                 }
-            }
+                GestureType.DOUBLE_TAP_LEFT -> DoubleTapSeekIndicator(
+                    icon = Icons.Default.FastRewind,
+                    seconds = abs(doubleTapDeltaSeconds),
+                )
+                GestureType.DOUBLE_TAP_RIGHT -> DoubleTapSeekIndicator(
+                    icon = Icons.Default.FastForward,
+                    seconds = abs(doubleTapDeltaSeconds),
+                )
+            GestureType.NONE -> Unit
         }
     }
 }
 @Composable
-private fun GestureProgressIndicator(icon: ImageVector, percent: Int) {
-    val controlColor = Color.White
-    Icon(icon, contentDescription = null, tint = controlColor, modifier = Modifier.size(36.dp))
-    Spacer(modifier = Modifier.height(12.dp))
-    LinearProgressIndicator(
-        progress = { percent / 100f },
-        color = MaterialTheme.colorScheme.primary,
-        trackColor = Color.Black.copy(alpha = 0.4f),
-        modifier = Modifier.width(90.dp).height(5.dp).clip(CircleShape),
-    )
-    Spacer(modifier = Modifier.height(8.dp))
-    Text(
-        "$percent%",
-        color = controlColor,
-        fontSize = 13.sp,
-        fontWeight = FontWeight.Bold,
-        style = LocalTextStyle.current.copy(
-            shadow = Shadow(color = Color.Black.copy(alpha = 0.85f), offset = Offset(0f, 1f), blurRadius = 3f),
-        ),
-    )
+private fun GestureLevelIndicator(icon: ImageVector, percent: Float) {
+    val fraction = (percent / 100f).coerceIn(0f, 1f)
+    Row(
+        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
+        GestureProgressTrack(fraction)
+        Text(
+            "${percent.roundToInt()}%",
+            color = Color.White,
+            fontWeight = FontWeight.Bold,
+            fontSize = 16.sp,
+            modifier = Modifier.widthIn(min = 42.dp),
+        )
+    }
+}
+
+@Composable
+private fun GestureProgressTrack(fraction: Float) {
+    val progress = fraction.coerceIn(0f, 1f)
+    BoxWithConstraints(
+        modifier = Modifier.width(136.dp).height(20.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(5.dp)
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = 0.24f)),
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(progress)
+                .height(5.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary),
+        )
+        Box(
+            modifier = Modifier
+                .offset(x = (maxWidth - 12.dp) * progress)
+                .size(12.dp)
+                .background(Color.White, CircleShape),
+        )
+    }
+}
+
+@Composable
+private fun DoubleTapSeekIndicator(icon: ImageVector, seconds: Int) {
+    Row(
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(26.dp))
+        Text("${seconds}s", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+    }
 }
 @Composable
 private fun FloatingUnlockButton(
@@ -2001,5 +2052,18 @@ private fun formatTime(ms: Long): String {
         String.format(Locale.US, "%02d:%02d:%02d", hours, minutes, seconds)
     } else {
         String.format(Locale.US, "%02d:%02d", minutes, seconds)
+    }
+}
+private fun formatSeekPreviewTime(ms: Long): String {
+    val clampedMs = ms.coerceAtLeast(0L)
+    val totalSeconds = clampedMs / 1000L
+    val tenths = (clampedMs % 1000L) / 100L
+    val seconds = totalSeconds % 60L
+    val minutes = (totalSeconds / 60L) % 60L
+    val hours = totalSeconds / 3600L
+    return if (hours > 0L) {
+        String.format(Locale.US, "%02d:%02d:%02d.%d", hours, minutes, seconds, tenths)
+    } else {
+        String.format(Locale.US, "%02d:%02d.%d", minutes, seconds, tenths)
     }
 }

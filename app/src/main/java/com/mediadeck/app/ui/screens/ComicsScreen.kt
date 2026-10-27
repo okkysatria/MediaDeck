@@ -2,6 +2,7 @@
 package com.mediadeck.app.ui.screens
 
 import androidx.core.net.toUri
+import android.provider.OpenableColumns
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -13,14 +14,11 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.slideInHorizontally
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,10 +30,8 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -52,17 +48,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Sort
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.CheckCircle
@@ -71,19 +62,11 @@ import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.FilterAlt
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.History
-import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -100,6 +83,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -115,7 +100,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.material3.LocalTextStyle
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -125,17 +109,26 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import coil3.compose.AsyncImage
 import com.mediadeck.app.data.comic.Comic
 import com.mediadeck.app.ui.components.ContinueHeroCard
 import androidx.compose.ui.graphics.luminance
 import com.mediadeck.app.ui.components.DeleteConfirmationDialog
 import com.mediadeck.app.ui.components.DraggableGridScrollbar
+import com.mediadeck.app.ui.components.MediaDeckSideSheet
+import com.mediadeck.app.ui.components.MediaOverflowMenu
+import com.mediadeck.app.ui.components.MediaEmptyState
+import com.mediadeck.app.ui.components.MediaSelectionCountTitle
+import com.mediadeck.app.ui.components.MediaSelectionDeleteButton
+import com.mediadeck.app.ui.components.MediaSelectionExitButton
+import com.mediadeck.app.ui.components.comicInfoRows
+import com.mediadeck.app.util.media.MediaFormatters
+import com.mediadeck.app.util.media.MediaUtils
+import com.mediadeck.app.util.smb.SmbConnectionManager
+import com.mediadeck.app.ui.components.SheetActionRow
+import com.mediadeck.app.ui.components.SheetSegmented
 import com.mediadeck.app.ui.components.MediaDeckHeader
 import com.mediadeck.app.ui.components.ScanStatusCard
 import com.mediadeck.app.ui.components.rememberBottomBarPadding
@@ -152,11 +145,14 @@ import com.mediadeck.app.ui.theme.LocalDeckColors
 import com.mediadeck.app.util.i18n.t
 import com.mediadeck.app.viewmodel.ComicViewModel
 import com.mediadeck.app.viewmodel.ScannerViewModel
-import java.text.NumberFormat
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.withContext
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -182,8 +178,8 @@ fun ComicsScreen(
     val isScanActive by scannerViewModel.isScanActive.collectAsState()
     val isScanPaused by scannerViewModel.isScanPaused.collectAsState()
     val isRefreshing by scannerViewModel.isManualRefreshing.collectAsState()
+    val scannedNewComicCount by scannerViewModel.comicCount.collectAsState()
     val heroComic by viewModel.heroComic.collectAsState()
-    val countFormat = remember { NumberFormat.getIntegerInstance() }
 
     var isSearchingLocal by rememberSaveable { mutableStateOf(false) }
     val isSearching = isSearchingLocal || search.isNotEmpty()
@@ -192,19 +188,18 @@ fun ComicsScreen(
     var showSortDialog by remember { mutableStateOf(false) }
     var isTagsPanelExpanded by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var scanStarted by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
-    var scanStartCount by remember { mutableIntStateOf(-1) }
     var scanCompleteAdded by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(isScanActive) {
         if (isScanActive) {
-            scanStartCount = comics.size
+            scanStarted = true
             scanCompleteAdded = 0
-        } else if (scanStartCount >= 0) {
+        } else if (scanStarted) {
             delay(400.milliseconds)
-            val added = comics.size - scanStartCount
-            if (added > 0) scanCompleteAdded = added
-            scanStartCount = -1
+            if (scannedNewComicCount > 0) scanCompleteAdded = scannedNewComicCount
+            scanStarted = false
         }
     }
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -251,9 +246,7 @@ fun ComicsScreen(
                     modifier = Modifier.clickable { viewModel.requestScrollToTop() },
                     navigationIcon = {
                         if (isMultiSelect) {
-                            IconButton(onClick = { viewModel.clearComicSelection() }) {
-                                Icon(Icons.Default.Close, contentDescription = t("Cancel", "Batal"))
-                            }
+                            MediaSelectionExitButton(onClick = { viewModel.clearComicSelection() })
                         } else {
                             IconButton(onClick = {
                                 viewModel.setComicSearch("")
@@ -265,11 +258,7 @@ fun ComicsScreen(
                     },
                     title = {
                         if (isMultiSelect) {
-                            Text(
-                                t("${selectedIds.size} Selected", "${selectedIds.size} Terpilih"),
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                            )
+                            MediaSelectionCountTitle(selectedIds.size)
                         } else {
                             TextField(
                                 value = search,
@@ -305,16 +294,7 @@ fun ComicsScreen(
                     },
                     actions = {
                         if (isMultiSelect) {
-                            IconButton(
-                                enabled = selectedIds.isNotEmpty(),
-                                onClick = { showDeleteConfirm = true },
-                            ) {
-                                Icon(
-                                    Icons.Default.Delete,
-                                    contentDescription = t("Delete", "Hapus"),
-                                    tint = if (selectedIds.isNotEmpty()) DangerColor else DangerColor.copy(alpha = 0.35f),
-                                )
-                            }
+                            MediaSelectionDeleteButton(onClick = { showDeleteConfirm = true }, enabled = selectedIds.isNotEmpty())
                         }
                     },
                 )
@@ -327,7 +307,7 @@ fun ComicsScreen(
                         "read_later" -> t("Read Later", "Baca Nanti")
                         else -> t("Comics", "Komik")
                     },
-                    subtitle = countFormat.format(comics.size).let { n -> t("$n titles", "$n judul") },
+                    subtitle = MediaFormatters.count(comics.size).let { n -> t("$n titles", "$n judul") },
                     onSearchClick = { isSearchingLocal = true },
                     onMoreClick = { showMainMenu = true },
                 )
@@ -425,31 +405,12 @@ fun ComicsScreen(
                 }
                 if (comics.isEmpty()) {
                     val hasActiveFilter = search.isNotEmpty() || selectedTags.isNotEmpty() || activeTab != "all"
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                            .verticalScroll(rememberScrollState()),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center,
-                        ) {
-                            Text(t("No comics found", "Komik tidak ditemukan"), color = DeckTextSecondary)
-                            if (!hasActiveFilter) {
-                                Spacer(modifier = Modifier.height(16.dp))
-                                FloatingActionButton(
-                                    onClick = onNavigateToScan,
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    shape = RoundedCornerShape(16.dp),
-                                ) {
-                                    Icon(Icons.Default.Add, contentDescription = t("Add Folder", "Tambah Folder"))
-                                }
-                            }
-                        }
-                    }
+                    MediaEmptyState(
+                        title = t("No comics found", "Komik tidak ditemukan"),
+                        modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+                        actionLabel = if (!hasActiveFilter) t("Add Folder", "Tambah Folder") else null,
+                        onAction = onNavigateToScan.takeIf { !hasActiveFilter },
+                    )
                 } else {
                     val isTitleOnly = settings.layoutMode == "title_only"
 
@@ -505,7 +466,6 @@ fun ComicsScreen(
                                             onOpenComic = onOpenComic,
                                             viewModel = viewModel,
                                             onDownloadComic = onDownloadComic,
-                                            showClearHistory = activeTab == "history",
                                         )
                                     }
                                 }
@@ -519,7 +479,6 @@ fun ComicsScreen(
                                         onOpenComic = onOpenComic,
                                         viewModel = viewModel,
                                         onDownloadComic = onDownloadComic,
-                                        showClearHistory = activeTab == "history",
                                     )
                                 }
                             }
@@ -537,9 +496,11 @@ fun ComicsScreen(
     }
 
     if (showSortDialog) {
-        SortSidePanel(
-            current = sortOption,
-            onSelect = { viewModel.setComicSort(it); showSortDialog = false },
+        MediaDeckSideSheet(
+            title = t("Sort Comics", "Urutkan Komik"),
+            currentSort = sortOption,
+            sortGroups = comicSortGroups(),
+            onSortSelected = { viewModel.setComicSort(it); showSortDialog = false },
             onDismiss = { showSortDialog = false },
             onBack = { showSortDialog = false; showMainMenu = true },
         )
@@ -560,7 +521,7 @@ fun ComicsScreen(
     }
 
     if (showMainMenu) {
-        GallerySideSheet(
+        MediaDeckSideSheet(
             title = t("Comics Options", "Opsi Komik"),
             onDismiss = { showMainMenu = false },
         ) {
@@ -654,7 +615,6 @@ private fun ComicEntry(
     onOpenComic: (Comic) -> Unit,
     viewModel: ComicViewModel,
     onDownloadComic: ((Comic) -> Unit)?,
-    showClearHistory: Boolean,
 ) {
     if (isTitleOnly) {
         ComicListItem(
@@ -664,7 +624,6 @@ private fun ComicEntry(
             onOpenComic = onOpenComic,
             viewModel = viewModel,
             onDownloadComic = onDownloadComic,
-            showClearHistory = showClearHistory,
         )
     } else {
         ComicCard(
@@ -674,7 +633,6 @@ private fun ComicEntry(
             onOpenComic = onOpenComic,
             viewModel = viewModel,
             onDownloadComic = onDownloadComic,
-            showClearHistory = showClearHistory,
         )
     }
 }
@@ -788,7 +746,6 @@ fun ComicCard(
     onOpenComic: (Comic) -> Unit,
     viewModel: ComicViewModel,
     onDownloadComic: ((Comic) -> Unit)? = null,
-    showClearHistory: Boolean = false,
 ) {
     EnsureComicMetadata(comic, viewModel)
 
@@ -903,7 +860,6 @@ fun ComicCard(
                 comic = comic,
                 viewModel = viewModel,
                 onDownloadComic = onDownloadComic,
-                showClearHistory = showClearHistory,
             )
         }
     }
@@ -915,19 +871,24 @@ private fun ComicMoreButton(
     comic: Comic,
     viewModel: ComicViewModel,
     onDownloadComic: ((Comic) -> Unit)?,
-    showClearHistory: Boolean,
 ) {
     val context = LocalContext.current
-    var showMenu by remember { mutableStateOf(false) }
-    var showInfoDialog by remember { mutableStateOf(false) }
-    var showDeleteConfirm by remember { mutableStateOf(false) }
-
-
-
-
-    if (showInfoDialog) {
-        ComicInfoDialog(comic = comic, onDismiss = { showInfoDialog = false })
-    }
+    val scope = rememberCoroutineScope()
+    var comicSizeBytes by remember(comic.id) { mutableLongStateOf(0L) }
+    var showDeleteConfirm by remember(comic.id) { mutableStateOf(false) }
+    MediaOverflowMenu(
+        isFavorite = comic.isFavorite,
+        infoTitle = comic.title,
+        infoRows = comicInfoRows(comic, comicSizeBytes),
+        onFavorite = { viewModel.toggleComicFavorite(comic) },
+        onDownload = onDownloadComic?.let { callback -> { callback(comic) } },
+        onDelete = { showDeleteConfirm = true },
+        onInfoOpened = {
+            scope.launch { comicSizeBytes = resolveComicSizeBytes(context, comic.folderUri) }
+        },
+        buttonSize = 24.dp,
+        iconSize = 18.dp,
+    )
     if (showDeleteConfirm) {
         DeleteConfirmationDialog(
             title = t("Delete Comic", "Hapus Komik"),
@@ -939,78 +900,44 @@ private fun ComicMoreButton(
             onDismiss = { showDeleteConfirm = false },
         )
     }
-
-    Box {
-        Box(
-            modifier = Modifier
-                .size(24.dp)
-                .clip(CircleShape)
-                .background(if (showMenu) Color.White.copy(alpha = 0.14f) else Color.Transparent)
-                .clickable { showMenu = true },
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = Icons.Default.MoreVert,
-                contentDescription = t("Menu", "Menu"),
-                tint = DeckTextSecondary,
-                modifier = Modifier.size(18.dp),
-            )
-        }
-        if (showMenu) {
-            ComicActionMenu(
-                onDismiss = { showMenu = false },
-                onInfo = { showInfoDialog = true },
-                onDownload = onDownloadComic?.let { cb -> { cb(comic) } },
-                onClearHistory = if (showClearHistory && comic.currentPage > 0) ({ viewModel.clearComicHistory(comic) }) else null,
-                onDelete = { showDeleteConfirm = true },
-            )
-        }
-    }
 }
 
-
-@Composable
-private fun ComicActionMenu(
-    onDismiss: () -> Unit,
-    onInfo: () -> Unit,
-    onDownload: (() -> Unit)?,
-    onClearHistory: (() -> Unit)?,
-    onDelete: () -> Unit,
-) {
-    DropdownMenu(
-        expanded = true,
-        onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(24.dp),
-        containerColor = DeckSurfaceVariant,
-        offset = DpOffset(0.dp, 6.dp),
-        modifier = Modifier.width(168.dp),
-    ) {
-        DropdownMenuItem(
-            text = { Text(t("Info", "Info"), fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = DeckTextPrimary) },
-            leadingIcon = { Icon(Icons.Outlined.Info, null, tint = DeckTextPrimary) },
-            onClick = { onDismiss(); onInfo() },
-        )
-        if (onDownload != null) {
-            DropdownMenuItem(
-                text = { Text(t("Download", "Unduh"), fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = DeckTextPrimary) },
-                leadingIcon = { Icon(Icons.Default.Download, null, tint = DeckTextPrimary) },
-                onClick = { onDismiss(); onDownload() },
-            )
+private suspend fun resolveComicSizeBytes(context: android.content.Context, uriString: String): Long =
+    withContext(Dispatchers.IO) {
+        try {
+            val uri = uriString.toUri()
+            when (uri.scheme?.lowercase()) {
+                "file" -> {
+                    val file = File(uri.path.orEmpty())
+                    if (file.isFile) file.length()
+                    else file.listFiles()?.filter { it.isFile && MediaUtils.isImageExt(MediaUtils.getFileExt(it.name)) }
+                        ?.sumOf(File::length) ?: 0L
+                }
+                "content" -> context.contentResolver.query(
+                    uri,
+                    arrayOf(OpenableColumns.SIZE),
+                    null,
+                    null,
+                    null,
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val index = cursor.getColumnIndex(OpenableColumns.SIZE)
+                        if (index >= 0) cursor.getLong(index) else 0L
+                    } else 0L
+                } ?: 0L
+                "smb" -> {
+                    val smbFile = SmbConnectionManager.getSmbFile(context, uriString)
+                    if (!smbFile.isDirectory) smbFile.length()
+                    else smbFile.listFiles()
+                        .filter { !it.isDirectory && MediaUtils.isImageExt(MediaUtils.getFileExt(it.name)) }
+                        .sumOf { it.length() }
+                }
+                else -> 0L
+            }
+        } catch (_: Exception) {
+            0L
         }
-        if (onClearHistory != null) {
-            DropdownMenuItem(
-                text = { Text(t("Clear History", "Hapus Riwayat"), fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = DeckTextPrimary) },
-                leadingIcon = { Icon(Icons.Default.History, null, tint = DeckTextPrimary) },
-                onClick = { onDismiss(); onClearHistory() },
-            )
-        }
-        DropdownMenuItem(
-            text = { Text(t("Delete", "Hapus"), fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = DangerColor) },
-            leadingIcon = { Icon(Icons.Outlined.Delete, null, tint = DangerColor) },
-            onClick = { onDismiss(); onDelete() },
-        )
     }
-}
 
 
 @Composable
@@ -1151,122 +1078,6 @@ private fun ScanCompleteCard(addedCount: Int, onShow: () -> Unit, onDismiss: () 
 
 
 @Composable
-private fun SortSidePanel(
-    current: String,
-    onSelect: (String) -> Unit,
-    onDismiss: () -> Unit,
-    onBack: (() -> Unit)? = null,
-) {
-    val groups = comicSortGroups()
-    var visible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { visible = true }
-
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = onDismiss,
-                ),
-        ) {
-            AnimatedVisibility(
-                visible = visible,
-                enter = slideInHorizontally(initialOffsetX = { it }),
-                modifier = Modifier.align(Alignment.CenterEnd),
-            ) {
-                Surface(
-                    color = MaterialTheme.colorScheme.background,
-                    modifier = Modifier
-                        .fillMaxHeight()
-                        .fillMaxWidth(0.77f)
-                        .pointerInput(Unit) { detectTapGestures { } },
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .statusBarsPadding()
-                            .navigationBarsPadding()
-                            .verticalScroll(rememberScrollState())
-                            .padding(horizontal = 12.dp),
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(start = 4.dp, top = 8.dp, bottom = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            if (onBack != null) {
-                                IconButton(onClick = onBack) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                        contentDescription = t("Back", "Kembali"),
-                                        tint = DeckTextPrimary,
-                                    )
-                                }
-                                Spacer(Modifier.width(4.dp))
-                            }
-                            Text(
-                                text = t("Sort Comics", "Urutkan Komik"),
-                                fontSize = 22.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = DeckTextPrimary,
-                                modifier = Modifier.weight(1f),
-                            )
-                            IconButton(onClick = onDismiss) {
-                                Icon(Icons.Default.Close, contentDescription = t("Close", "Tutup"), tint = DeckTextPrimary)
-                            }
-                        }
-                        Spacer(Modifier.height(12.dp))
-                        groups.forEachIndexed { index, group ->
-                            if (index > 0) {
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                                    color = Color.White.copy(alpha = 0.12f),
-                                )
-                            }
-                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                group.forEach { (key, label) ->
-                                    val selected = current == key
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(52.dp)
-                                            .clip(RoundedCornerShape(16.dp))
-                                            .background(if (selected) SortSelectedColor else Color.Transparent)
-                                            .clickable { onSelect(key) }
-                                            .padding(horizontal = 16.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                    ) {
-                                        RadioButton(
-                                            selected = selected,
-                                            onClick = null,
-                                            colors = RadioButtonDefaults.colors(
-                                                selectedColor = DeckAccentBlue,
-                                                unselectedColor = DeckTextSecondary,
-                                            ),
-                                        )
-                                        Text(
-                                            text = label,
-                                            fontSize = 16.sp,
-                                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                                            color = DeckTextPrimary,
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
 fun ComicListItem(
     comic: Comic,
     isSelected: Boolean,
@@ -1274,7 +1085,6 @@ fun ComicListItem(
     onOpenComic: (Comic) -> Unit,
     viewModel: ComicViewModel,
     onDownloadComic: ((Comic) -> Unit)? = null,
-    showClearHistory: Boolean = false,
 ) {
     EnsureComicMetadata(comic, viewModel)
 
@@ -1381,51 +1191,16 @@ fun ComicListItem(
                     comic = comic,
                     viewModel = viewModel,
                     onDownloadComic = onDownloadComic,
-                    showClearHistory = showClearHistory,
                 )
             }
         }
     }
 }
 
-@Composable
-fun ComicInfoDialog(comic: Comic, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(t("Comic Information", "Informasi Komik"), fontWeight = FontWeight.Bold) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                InfoRow(t("Title:", "Judul:"), comic.title)
-                InfoRow(t("Folder:", "Folder:"), comic.parentFolderName)
-                InfoRow(t("Total Pages:", "Total Halaman:"), comic.totalPages.toString())
-                InfoRow(t("Tags:", "Tag:"), comic.tags.ifEmpty { "-" })
-                InfoRow(t("Path:", "Lokasi:"), comic.folderUri)
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(t("Close", "Tutup"))
-            }
-        },
-    )
-}
-
-@Composable
-private fun InfoRow(label: String, value: String) {
-    Column {
-        Text(text = label, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-        Text(text = value, fontSize = 14.sp)
-    }
-}
-
-
 private val SelectedListItemColor: Color
     @Composable
     get() = DeckAccentPillBg
 private val DangerColor = Color(0xFFFF6B7A)
-private val SortSelectedColor: Color
-    @Composable
-    get() = DeckAccentPillBg
 private val ShimmerBase: Color
     @Composable
     get() = if (LocalDeckColors.current.background.luminance() > 0.5f) Color(0xFFE2E8F0) else Color(0xFF1C1F26)
@@ -1458,8 +1233,7 @@ private fun comicSortLabel(key: String): String = when (key) {
     "date_asc" -> t("Oldest Added", "Terlama Ditambahkan")
     "last_read_desc" -> t("Last Read", "Terakhir Dibaca")
     "pages_desc" -> t("Most Pages", "Halaman Terbanyak")
-    "size_desc" -> t("Largest Size", "Ukuran Terbesar")
-    "size_asc" -> t("Smallest Size", "Ukuran Terkecil")
+    "pages_asc" -> t("Fewest Pages", "Halaman Tersedikit")
     "random" -> t("Shuffle / Random", "Acak")
     else -> t("Newest Added", "Terbaru Ditambahkan")
 }
@@ -1470,6 +1244,7 @@ private fun comicSortGroups(): List<List<Pair<String, String>>> =
     listOf(
         listOf("name_asc", "name_desc"),
         listOf("date_desc", "date_asc"),
-        listOf("size_desc", "size_asc"),
+        listOf("last_read_desc", "pages_desc"),
+        listOf("pages_asc"),
         listOf("random"),
     ).map { group -> group.map { key -> key to comicSortLabel(key) } }

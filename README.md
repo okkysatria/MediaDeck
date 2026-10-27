@@ -58,7 +58,6 @@ Versions are managed in [`gradle/libs.versions.toml`](gradle/libs.versions.toml)
 | SMB | `org.codelibs:jcifs` | 3.0.3 |
 | Dependency injection | Hilt | 2.60.1 |
 | Async work | Kotlin Coroutines | 1.11.0 |
-| HTTP and JSON | OkHttp, Retrofit, Moshi | See version catalog |
 
 The SMB client is the CodeLibs `jcifs` artifact; this project does not depend on SMBJ.
 
