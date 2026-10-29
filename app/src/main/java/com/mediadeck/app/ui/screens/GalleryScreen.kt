@@ -19,7 +19,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -56,6 +55,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -287,6 +287,7 @@ fun GalleryScreen(
     val sortOption by viewModel.gallerySort.collectAsState()
     val isManualRefreshing by scannerViewModel.isManualRefreshing.collectAsState()
     val selectedTags by viewModel.selectedTagsFilter.collectAsState()
+    val galleryMediaType by viewModel.galleryMediaType.collectAsState()
 
     LaunchedEffect(viewModel) {
         viewModel.enqueueMissingThumbnails(context)
@@ -759,6 +760,16 @@ fun GalleryScreen(
             title = t("Gallery Options", "Opsi Galeri"),
             onDismiss = { activeSheet = null },
         ) {
+                SheetSectionLabel(t("Media type", "Jenis media"))
+                SheetSegmented(
+                    options = listOf(
+                        "all" to t("All", "Semua"),
+                        "photos" to t("Photos", "Foto"),
+                        "videos" to t("Videos", "Video"),
+                    ),
+                    selected = galleryMediaType,
+                    onSelect = viewModel::setGalleryMediaType,
+                )
                 SheetSectionLabel(t("View", "Tampilan"))
                 SheetSegmented(
                     options = listOf("grid" to t("Grid", "Grid"), "title_only" to t("List", "Daftar")),
@@ -1021,36 +1032,22 @@ private fun GalleryCardContent(
                 }
             }
             if (isVideo) {
-                Surface(
-                    shape = CircleShape,
-                    color = Color.Black.copy(alpha = 0.45f),
-                    shadowElevation = 4.dp,
-                    border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.15f)),
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .size(36.dp),
-                ) {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                        Icon(Icons.Default.PlayArrow, null, tint = Color.White, modifier = Modifier.size(20.dp))
-                    }
-                }
                 if (item.duration > 0) {
                     val durationText = remember(item.duration) { MediaUtils.formatDuration(item.duration) }
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = Color.Black.copy(alpha = 0.65f),
-                        shadowElevation = 3.dp,
-                        border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.12f)),
-                        modifier = Modifier.align(Alignment.BottomStart).padding(6.dp),
-                    ) {
-                        Text(
-                            text = durationText,
-                            color = Color.White,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                        )
-                    }
+                    Text(
+                        text = durationText,
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        style = LocalTextStyle.current.copy(
+                            shadow = Shadow(
+                                color = Color.Black.copy(alpha = 0.9f),
+                                offset = androidx.compose.ui.geometry.Offset(0f, 1f),
+                                blurRadius = 3f,
+                            ),
+                        ),
+                        modifier = Modifier.align(Alignment.BottomStart).padding(start = 8.dp, bottom = 10.dp),
+                    )
                 }
             }
             if (!isMultiSelect) {

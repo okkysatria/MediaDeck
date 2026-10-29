@@ -655,8 +655,8 @@ fun MovieCard(movie: Movie, isSelected: Boolean, isMultiSelect: Boolean, onOpenM
                         ),
                     ),
                     modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(end = 8.dp, bottom = if (progressFraction > 0f) 10.dp else 6.dp)
+                        .align(Alignment.BottomStart)
+                        .padding(start = 8.dp, bottom = if (progressFraction > 0f) 10.dp else 6.dp)
                 )
             }
 

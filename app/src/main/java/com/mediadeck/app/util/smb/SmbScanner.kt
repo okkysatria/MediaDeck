@@ -401,9 +401,9 @@ object SmbScanner {
                     val name = file.name
                     onProgress(name)
                     val ext = MediaUtils.getFileExt(name)
-                    if (MediaUtils.isImageExt(ext)) {
+                    if (MediaUtils.isImageExt(ext) || MediaUtils.isVideoFile(name)) {
                         val parsed = LocalScanner.parseNameMetadata(name, settings)
-                        val mType = MediaUtils.getMimeTypeFromExt(ext)
+                        val mType = if (MediaUtils.isVideoFile(name)) "video/${ext}" else MediaUtils.getMimeTypeFromExt(ext)
                         val item = GalleryItem(
                             uri = cpUri,
                             name = parsed.title,

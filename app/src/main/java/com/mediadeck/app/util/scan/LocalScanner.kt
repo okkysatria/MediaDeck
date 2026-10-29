@@ -679,12 +679,12 @@ object LocalScanner {
                 val name = file.name
                 onProgress?.invoke(name)
                 val ext = MediaUtils.getFileExt(name)
-                if (MediaUtils.isImageExt(ext)) {
+                if (MediaUtils.isImageExt(ext) || MediaUtils.isVideoFile(name)) {
                     val parsed = parseNameMetadata(name, settings)
                     val item = GalleryItem(
                         uri = Uri.fromFile(file).toString(),
                         name = parsed.title,
-                        mimeType = MediaUtils.getMimeTypeFromExt(ext),
+                        mimeType = if (MediaUtils.isVideoFile(name)) "video/${ext}" else MediaUtils.getMimeTypeFromExt(ext),
                         size = file.length(),
                         dateAdded = file.lastModified(),
                         folderName = dir.name,

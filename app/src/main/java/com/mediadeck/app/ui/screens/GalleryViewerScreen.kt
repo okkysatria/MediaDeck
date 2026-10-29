@@ -1,5 +1,22 @@
 package com.mediadeck.app.ui.screens
 import android.Manifest
+import android.content.Context
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.Button
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
 import android.content.pm.PackageManager
 import android.os.Build
 import android.widget.Toast
@@ -29,7 +46,6 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -49,8 +65,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ChevronLeft
-import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.ContentCopy
@@ -58,6 +72,8 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.PictureInPicture
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.automirrored.filled.RotateLeft
 import androidx.compose.material.icons.automirrored.filled.RotateRight
@@ -135,13 +151,15 @@ import coil3.size.Size
 import coil3.size.Precision
 import com.mediadeck.app.data.gallery.GalleryItem
 import com.mediadeck.app.ui.components.DeleteConfirmationDialog
+import com.mediadeck.app.ui.components.MediaInfoBottomSheet
+import com.mediadeck.app.ui.components.galleryInfoRows
 import com.mediadeck.app.ui.components.ZoomableMediaBox
 import com.mediadeck.app.util.i18n.t
 import com.mediadeck.app.util.media.MediaUtils
-import com.mediadeck.app.util.media.MediaFormatters
 import com.mediadeck.app.util.scan.ScannerStateManager
 import com.mediadeck.app.viewmodel.GalleryViewModel
 import com.mediadeck.app.viewmodel.MovieViewModel
+import com.mediadeck.app.ui.theme.DeckDivider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -207,6 +225,7 @@ fun GalleryViewerScreen(
     var isPagerScrollEnabled by remember { mutableStateOf(true) }
     val currentIndex = pagerState.currentPage
     PreloadGalleryNeighbors(items, currentIndex)
+    val videoState = rememberGalleryVideoState()
     val toastCopied = t("URL path copied!", "Jalur URL disalin!")
     val toastSaved = t("Saved successfully!", "Disimpan!")
     val downloadOk = t("Saved to Downloads", "Disimpan ke folder Unduhan")
@@ -242,6 +261,24 @@ fun GalleryViewerScreen(
         }
         return
     }
+    val onDownload: () -> Unit = {
+        if (MediaUtils.isSmbUri(currentItem.uri)) {
+            movieViewModel.downloadSmbFile(context, currentItem.uri, currentItem.name)
+        } else {
+            val needsPermission = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
+            if (needsPermission) {
+                pendingDownload = currentItem
+                storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            } else {
+                performLocalDownload(currentItem)
+            }
+        }
+    }
+    val isCurrentVideo = currentItem.mimeType.contains("video", ignoreCase = true)
+    val goToPage: (Int) -> Unit = { target ->
+        coroutineScope.launch { pagerState.animateScrollToPage(target) }
+    }
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(currentIndex) {
         try {
@@ -263,8 +300,48 @@ fun GalleryViewerScreen(
     BackHandler(enabled = showSidebarDetail) { showSidebarDetail = false }
     var albumNameInput by remember(currentItem.id) { mutableStateOf(currentItem.folderName) }
     var tagsInput by remember(currentItem.id) { mutableStateOf(currentItem.tags) }
-    LaunchedEffect(showUi, showSidebarDetail) {
-        if (showUi && !showSidebarDetail) {
+    var uiActivityTick by remember { mutableIntStateOf(0) }
+    val settledVideo = items.getOrNull(pagerState.settledPage)
+        ?.takeIf { it.mimeType.contains("video", ignoreCase = true) }
+    val videoControlsEnabled = isCurrentVideo && settledVideo?.id == currentItem.id
+    LaunchedEffect(settledVideo?.id, settledVideo?.uri) {
+        val target = settledVideo
+        if (target != null) videoState.load(target.uri) else videoState.unload()
+    }
+    LaunchedEffect(isMuted) { videoState.setMuted(isMuted) }
+    LaunchedEffect(videoControlsEnabled, showUi) {
+        if (videoControlsEnabled && showUi) {
+            while (true) {
+                videoState.syncProgress()
+                delay(200.milliseconds)
+            }
+        }
+    }
+    val lifecycleOwner = remember(context) { context.findLifecycleOwner() }
+    DisposableEffect(lifecycleOwner, videoState) {
+        var resumeOnReturn = false
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_PAUSE -> {
+                    if (videoState.pauseForBackground()) resumeOnReturn = true
+                }
+                Lifecycle.Event.ON_RESUME -> {
+                    if (resumeOnReturn) {
+                        resumeOnReturn = false
+                        videoState.resume()
+                    }
+                }
+                else -> Unit
+            }
+        }
+        lifecycleOwner?.lifecycle?.addObserver(observer)
+        onDispose { lifecycleOwner?.lifecycle?.removeObserver(observer) }
+    }
+    // UI tidak boleh hilang saat video dijeda, di-seek, atau error; timer di-reset tiap interaksi.
+    val keepUiVisible = showSidebarDetail ||
+        (isCurrentVideo && (videoState.isScrubbing || !videoState.playWhenReady || videoState.hasError))
+    LaunchedEffect(showUi, keepUiVisible, uiActivityTick) {
+        if (showUi && !keepUiVisible) {
             delay(4000.milliseconds)
             showUi = false
         }
@@ -325,6 +402,15 @@ fun GalleryViewerScreen(
                             }
                             true
                         }
+                        Key.Spacebar -> {
+                            if (isCurrentVideo) {
+                                videoState.togglePlay()
+                                uiActivityTick++
+                                true
+                            } else {
+                                false
+                            }
+                        }
                         else -> false
                     }
                     else -> false
@@ -379,7 +465,7 @@ fun GalleryViewerScreen(
                         GalleryPageItem(
                             item = pageItem,
                             isFitMode = isFitMode,
-                            isMuted = isMuted,
+                            videoState = videoState,
                             rotation = if (page == currentIndex) rotationDegrees else 0f,
                             isCurrentPage = page == pagerState.settledPage,
                             onToggleUi = { showUi = !showUi },
@@ -425,6 +511,7 @@ fun GalleryViewerScreen(
                 exit = fadeOut(),
                 modifier = Modifier
                     .align(Alignment.TopCenter)
+                    .background(Color.Black.copy(alpha = 0.55f))
                     .statusBarsPadding(),
             ) {
                 TopAppBar(
@@ -460,284 +547,66 @@ fun GalleryViewerScreen(
                     expandedHeight = 56.dp,
                     windowInsets = WindowInsets(0, 0, 0, 0),
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        containerColor = Color.Transparent,
                         titleContentColor = Color.White,
                         navigationIconContentColor = Color.White,
                         actionIconContentColor = Color.White,
                     ),
                 )
             }
+
             AnimatedVisibility(
                 visible = showUi && !showSidebarDetail,
                 enter = fadeIn(),
                 exit = fadeOut(),
-                modifier = Modifier.align(Alignment.BottomCenter)
+                modifier = Modifier.align(Alignment.BottomCenter),
             ) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .navigationBarsPadding()
-                            .padding(start = 16.dp, end = 6.dp, top = if (compactViewer) 6.dp else 12.dp, bottom = if (compactViewer) 6.dp else 12.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Surface(
-                                shape = CircleShape,
-                                color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Text("${currentIndex + 1}", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                                    Text(" / ${items.size}", color = Color.White.copy(alpha = 0.6f), fontSize = 18.sp)
-                                }
-                            }
-                            Row {
-                                val isVideo = currentItem.mimeType.contains("video", ignoreCase = true)
-                                if (!isVideo) {
-                                    IconButton(onClick = { rotationDegrees += 90f }, colors = IconButtonDefaults.iconButtonColors(contentColor = Color.White)) {
-                                        Icon(Icons.AutoMirrored.Filled.RotateRight, contentDescription = t("Rotate Right", "Putar Kanan"))
-                                    }
-                                    IconButton(onClick = { rotationDegrees -= 90f }, colors = IconButtonDefaults.iconButtonColors(contentColor = Color.White)) {
-                                        Icon(Icons.AutoMirrored.Filled.RotateLeft, contentDescription = t("Rotate Left", "Putar Kiri"))
-                                    }
-                                    IconButton(onClick = { isFitMode = !isFitMode }, colors = IconButtonDefaults.iconButtonColors(contentColor = Color.White)) {
-                                        Icon(if (isFitMode) Icons.Default.Fullscreen else Icons.Default.PictureInPicture, contentDescription = t("Fit/Original Size", "Fit/Original"))
-                                    }
-                                } else {
-                                    IconButton(onClick = { isMuted = !isMuted }, colors = IconButtonDefaults.iconButtonColors(contentColor = Color.White)) {
-                                        Icon(if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp, contentDescription = t("Sound Toggle", "Suara"))
-                                    }
-                                }
-                                IconButton(
-                                    onClick = {
-                                        if (MediaUtils.isSmbUri(currentItem.uri)) {
-                                            movieViewModel.downloadSmbFile(context, currentItem.uri, currentItem.name)
-                                        } else {
-                                            val needsPermission = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
-                                                    ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
-                                            if (needsPermission) {
-                                                pendingDownload = currentItem
-                                                storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                                            } else {
-                                                performLocalDownload(currentItem)
-                                            }
-                                        }
-                                    },
-                                    colors = IconButtonDefaults.iconButtonColors(contentColor = Color.White),
-                                ) {
-                                    Icon(Icons.Default.Download, contentDescription = t("Download", "Unduh"))
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            AnimatedVisibility(
-                visible = showUi,
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp)
-                    .align(Alignment.Center),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (currentIndex > 0) {
-                        IconButton(
-                            onClick = {
-                                coroutineScope.launch {
-                                    pagerState.animateScrollToPage(currentIndex - 1)
-                                }
-                            },
-                            modifier = Modifier
-                                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                                .testTag("viewer_prev_button"),
-                        ) {
-                            Icon(Icons.Default.ChevronLeft, contentDescription = t("Previous", "Sebelumnya"), tint = Color.White)
-                        }
-                    } else {
-                        Spacer(modifier = Modifier.size(48.dp))
-                    }
-                    if (currentIndex < items.size - 1) {
-                        IconButton(
-                            onClick = {
-                                coroutineScope.launch {
-                                    pagerState.animateScrollToPage(currentIndex + 1)
-                                }
-                            },
-                            modifier = Modifier
-                                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                                .testTag("viewer_next_button"),
-                        ) {
-                            Icon(Icons.Default.ChevronRight, contentDescription = t("Next", "Berikutnya"), tint = Color.White)
-                        }
-                    } else {
-                        Spacer(modifier = Modifier.size(48.dp))
-                    }
+                if (isCurrentVideo) {
+                    VideoBottomControls(
+                        state = videoState,
+                        enabled = videoControlsEnabled,
+                        isMuted = isMuted,
+                        currentIndex = currentIndex,
+                        totalCount = items.size,
+                        hasPrevious = currentIndex > 0,
+                        hasNext = currentIndex < items.size - 1,
+                        compact = compactViewer,
+                        onPrevious = { goToPage(currentIndex - 1) },
+                        onNext = { goToPage(currentIndex + 1) },
+                        onToggleMute = { isMuted = !isMuted },
+                        onDownload = onDownload,
+                        onInteraction = { uiActivityTick++ },
+                    )
+                } else {
+                    PhotoBottomControls(
+                        currentIndex = currentIndex,
+                        totalCount = items.size,
+                        isFitMode = isFitMode,
+                        compact = compactViewer,
+                        onRotateLeft = { rotationDegrees -= 90f },
+                        onRotateRight = { rotationDegrees += 90f },
+                        onToggleFit = { isFitMode = !isFitMode },
+                        onDownload = onDownload,
+                        onInteraction = { uiActivityTick++ },
+                    )
                 }
             }
 
-            AnimatedVisibility(
-                visible = showSidebarDetail,
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.5f))
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                        ) { showSidebarDetail = false },
-                )
-            }
-            AnimatedVisibility(
-                visible = showSidebarDetail,
-                enter = slideInVertically(initialOffsetY = { it }),
-                exit = slideOutVertically(targetOffsetY = { it }),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.BottomCenter),
-            ) {
-                val sizeFormatted = remember(currentItem.size) { MediaFormatters.fileSize(currentItem.size) }
-                val dateText = remember(currentItem.dateAdded) { MediaFormatters.dateTime(currentItem.dateAdded, unknownValue = "-") }
-                val tagList = remember(currentItem.tags) {
-                    currentItem.tags.split(",").map { it.trim() }.filter { it.isNotEmpty() }.distinct()
-                }
-                val maxSheetHeight = (screenHeightDp * (if (compactViewer) 0.96f else 0.92f)).dp
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = maxSheetHeight)
-                        .pointerInput(Unit) {
-                            var totalDragY = 0f
-                            detectVerticalDragGestures(
-                                onDragStart = { totalDragY = 0f },
-                                onDragEnd = {
-                                    if (totalDragY > 100f) {
-                                        showSidebarDetail = false
-                                    }
-                                },
-                                onDragCancel = { totalDragY = 0f },
-                                onVerticalDrag = { change, dragAmount ->
-                                    change.consume()
-                                    totalDragY += dragAmount
-                                },
-                            )
-                        },
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .navigationBarsPadding()
-                            .verticalScroll(rememberScrollState())
-                            .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 20.dp),
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.CenterHorizontally)
-                                .width(40.dp)
-                                .height(5.dp)
-                                .clip(RoundedCornerShape(3.dp))
-                                .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)),
+            if (showSidebarDetail) {
+                MediaInfoBottomSheet(
+                    title = currentItem.name,
+                    rows = galleryInfoRows(currentItem),
+                    onDismiss = { showSidebarDetail = false },
+                    closeLabel = t("Close", "Tutup"),
+                    extraContent = {
+                        HorizontalDivider(color = DeckDivider)
+                        Text(
+                            t("ALBUM & TAGS", "ALBUM & TAG"),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp),
                         )
-                        Spacer(modifier = Modifier.height(20.dp))
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Icon(
-                                Icons.Outlined.Info,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(28.dp),
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                t("Details & Album", "Detail & Album"),
-                                fontSize = 22.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.weight(1f),
-                            )
-                            IconButton(onClick = { showSidebarDetail = false }) {
-                                Icon(Icons.Default.Close, contentDescription = t("Close", "Tutup"))
-                            }
-                        }
-                        Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                            ),
-                            shape = RoundedCornerShape(24.dp),
-                            modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 18.dp),
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    GalleryDetailRow(
-                                        t("File name", "Nama file"),
-                                        currentItem.name.substringBeforeLast('.', currentItem.name),
-                                    )
-                                    GalleryDetailRow(t("Format", "Format"), currentItem.mimeType)
-                                    GalleryDetailRow(t("Size", "Ukuran"), sizeFormatted)
-                                    GalleryDetailRow(
-                                        t("Dimension", "Dimensi"),
-                                        if (currentItem.width > 0 && currentItem.height > 0) {
-                                            "${currentItem.width} × ${currentItem.height}"
-                                        } else {
-                                            t("Loading...", "Memuat...")
-                                        },
-                                    )
-                                    if (currentItem.mimeType.contains("video", true) && currentItem.duration > 0) {
-                                        GalleryDetailRow(
-                                            t("Duration", "Durasi"),
-                                            MediaUtils.formatDuration(currentItem.duration),
-                                        )
-                                    }
-                                    GalleryDetailRow(t("Added on", "Ditambahkan"), dateText)
-                                }
-                                Spacer(modifier = Modifier.height(12.dp))
-                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = currentItem.uri,
-                                        fontSize = 16.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.MiddleEllipsis,
-                                        modifier = Modifier.weight(1f),
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                    IconButton(
-                                        onClick = {
-                                            coroutineScope.launch {
-                                                clipboard.setClipEntry(androidx.compose.ui.platform.ClipEntry(android.content.ClipData.newPlainText("URL", currentItem.uri)))
-                                            }
-                                            Toast.makeText(context, toastCopied, Toast.LENGTH_SHORT).show()
-                                        },
-                                        modifier = Modifier.size(40.dp),
-                                    ) {
-                                        Icon(Icons.Default.ContentCopy, contentDescription = t("Copy", "Salin"), modifier = Modifier.size(22.dp))
-                                    }
-                                }
-                            }
-                        }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -748,7 +617,7 @@ fun GalleryViewerScreen(
                                 onValueChange = { albumNameInput = it },
                                 label = { Text(t("Album", "Album")) },
                                 singleLine = true,
-                                textStyle = TextStyle(fontSize = 17.sp),
+                                textStyle = TextStyle(fontSize = 16.sp),
                                 shape = RoundedCornerShape(16.dp),
                                 modifier = Modifier.weight(1f),
                             )
@@ -758,7 +627,7 @@ fun GalleryViewerScreen(
                                 label = { Text(t("Tags (comma)", "Tags (koma)")) },
                                 placeholder = { Text(t("Tags (comma)", "Tags (koma)")) },
                                 singleLine = true,
-                                textStyle = TextStyle(fontSize = 17.sp),
+                                textStyle = TextStyle(fontSize = 16.sp),
                                 shape = RoundedCornerShape(16.dp),
                                 modifier = Modifier.weight(1.2f),
                             )
@@ -781,12 +650,15 @@ fun GalleryViewerScreen(
                                 Icon(Icons.Default.Save, contentDescription = t("Save", "Simpan"))
                             }
                         }
+                        val tagList = remember(currentItem.tags) {
+                            currentItem.tags.split(",").map(String::trim).filter(String::isNotEmpty).distinct()
+                        }
                         if (tagList.isNotEmpty()) {
                             Text(
                                 t("Click Tag to Filter:", "Klik Tag untuk Menyaring:"),
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(top = 16.dp, bottom = 4.dp),
+                                modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
                                 color = MaterialTheme.colorScheme.outline,
                             )
                             LazyRow(
@@ -801,8 +673,8 @@ fun GalleryViewerScreen(
                                 }
                             }
                         }
-                    }
-                }
+                    },
+                )
             }
         }
     }
@@ -812,7 +684,7 @@ fun GalleryViewerScreen(
 fun GalleryPageItem(
     item: GalleryItem,
     isFitMode: Boolean,
-    isMuted: Boolean,
+    videoState: GalleryVideoState,
     rotation: Float,
     onToggleUi: () -> Unit,
     onSwipeUp: () -> Unit,
@@ -834,6 +706,12 @@ fun GalleryPageItem(
     Box(
         modifier = modifier
             .fillMaxSize()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                enabled = isVideo,
+                onClick = onToggleUi,
+            )
             .draggable(
                 state = draggableState,
                 orientation = Orientation.Vertical,
@@ -852,7 +730,7 @@ fun GalleryPageItem(
 
 
             if (isCurrentPage) {
-                VideoPlayerPage(item = item, isMuted = isMuted, onToggleUi = onToggleUi)
+                VideoPlayerPage(item = item, state = videoState)
             }
         } else {
             val context = LocalContext.current
@@ -988,90 +866,688 @@ private fun android.content.Context.findLifecycleOwner(): androidx.lifecycle.Lif
     return null
 }
 
+
 @androidx.media3.common.util.UnstableApi
 @Composable
 private fun VideoPlayerPage(
     item: GalleryItem,
-    isMuted: Boolean,
-    onToggleUi: () -> Unit,
+    state: GalleryVideoState,
 ) {
-    val context = LocalContext.current
-    var videoAspectRatio by remember { mutableFloatStateOf(16f / 9f) }
-    val exoPlayer = remember {
-        androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
-            repeatMode = androidx.media3.common.Player.REPEAT_MODE_ALL
-        }
-    }
-    LaunchedEffect(item.uri) {
-        try {
-            exoPlayer.setMediaItem(androidx.media3.common.MediaItem.fromUri(item.uri))
-            exoPlayer.prepare()
-            exoPlayer.playWhenReady = true
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-    LaunchedEffect(isMuted) {
-        exoPlayer.volume = if (isMuted) 0f else 1f
-    }
-    DisposableEffect(exoPlayer) {
-        val listener = object : androidx.media3.common.Player.Listener {
-            override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
-                if (videoSize.width > 0 && videoSize.height > 0) {
-                    videoAspectRatio = videoSize.width.toFloat() / videoSize.height.toFloat()
-                }
-            }
-        }
-        exoPlayer.addListener(listener)
-
-        val owner = context.findLifecycleOwner()
-        var wasPlaying = false
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_PAUSE -> {
-                    wasPlaying = exoPlayer.playWhenReady
-                    exoPlayer.pause()
-                }
-                Lifecycle.Event.ON_RESUME -> if (wasPlaying) exoPlayer.play()
-                else -> Unit
-            }
-        }
-        owner?.lifecycle?.addObserver(observer)
-        onDispose {
-            owner?.lifecycle?.removeObserver(observer)
-            exoPlayer.removeListener(listener)
-            exoPlayer.release()
-        }
-    }
     Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(videoAspectRatio),
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
     ) {
         AndroidView(
             modifier = Modifier.fillMaxSize().testTag("video_player_view_${item.id}"),
             factory = { ctx ->
-                androidx.media3.ui.PlayerView(ctx).apply {
-                    player = exoPlayer
-                    useController = true
-                    setShowNextButton(false)
-                    setShowPreviousButton(false)
-                    controllerShowTimeoutMs = 4000
+                (android.view.LayoutInflater.from(ctx)
+                    .inflate(com.mediadeck.app.R.layout.exo_player_texture_view, android.widget.FrameLayout(ctx), false)
+                    as androidx.media3.ui.PlayerView).apply {
+                    player = state.player
+                    useController = false
+                    setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+                    resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
                 }
             },
             update = { view ->
-                if (view.player != exoPlayer) {
-                    view.player = exoPlayer
+                if (view.player !== state.player) {
+                    view.player = state.player
                 }
-
-                view.setOnClickListener { onToggleUi() }
             },
             onRelease = { view ->
                 view.player = null
-            }
+            },
         )
+        if (state.hasError) {
+            VideoErrorOverlay(onRetry = { state.retry() })
+        } else if (state.isBuffering) {
+            CircularProgressIndicator(color = Color.White)
+        }
     }
 }
+
+@Composable
+private fun VideoErrorOverlay(onRetry: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth(0.85f)
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Icon(
+            Icons.Default.CloudOff,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.error,
+            modifier = Modifier.size(48.dp),
+        )
+        Text(
+            t("This video cannot be played", "Video tidak dapat diputar"),
+            color = Color.White,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+        )
+        Button(onClick = onRetry) {
+            Text(t("Retry", "Coba lagi"))
+        }
+    }
+}
+
+/**
+ * Satu ExoPlayer untuk seluruh viewer (dibuat lazy, hanya saat ada video).
+ * State dipisah dari UI supaya kontrol bisa diletakkan di bawah layar,
+ * di luar halaman pager.
+ */
+@Stable
+class GalleryVideoState(private val context: Context) {
+    private var currentUri: String? = null
+    private var muted = false
+
+    var isBuffering by mutableStateOf(false)
+        private set
+    var playWhenReady by mutableStateOf(false)
+        private set
+    var hasError by mutableStateOf(false)
+        private set
+    var positionMs by mutableLongStateOf(0L)
+        private set
+    var durationMs by mutableLongStateOf(0L)
+        private set
+    var bufferedMs by mutableLongStateOf(0L)
+        private set
+    var isScrubbing by mutableStateOf(false)
+        private set
+    var scrubMs by mutableLongStateOf(0L)
+        private set
+
+    private val listener = object : Player.Listener {
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            this@GalleryVideoState.playWhenReady = playWhenReady
+        }
+
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            isBuffering = playbackState == Player.STATE_BUFFERING
+            if (playbackState == Player.STATE_READY) {
+                val d = player.duration
+                if (d > 0L) durationMs = d
+            }
+        }
+
+        override fun onPlayerError(error: PlaybackException) {
+            hasError = true
+            isBuffering = false
+        }
+    }
+
+    private val playerDelegate = lazy {
+        ExoPlayer.Builder(context).build().apply {
+            repeatMode = Player.REPEAT_MODE_ALL
+            volume = if (muted) 0f else 1f
+            addListener(listener)
+        }
+    }
+    val player: ExoPlayer get() = playerDelegate.value
+
+    private fun resetProgress() {
+        positionMs = 0L
+        durationMs = 0L
+        bufferedMs = 0L
+        isScrubbing = false
+        scrubMs = 0L
+    }
+
+    fun load(uri: String) {
+        currentUri = uri
+        resetProgress()
+        hasError = false
+        isBuffering = true
+        try {
+            player.setMediaItem(MediaItem.fromUri(uri))
+            player.prepare()
+            player.playWhenReady = true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            hasError = true
+            isBuffering = false
+        }
+    }
+
+    fun unload() {
+        currentUri = null
+        if (playerDelegate.isInitialized()) {
+            player.playWhenReady = false
+            player.stop()
+            player.clearMediaItems()
+        }
+        resetProgress()
+        isBuffering = false
+        hasError = false
+        playWhenReady = false
+    }
+
+    fun retry() {
+        currentUri?.let { load(it) }
+    }
+
+    fun togglePlay() {
+        if (!playerDelegate.isInitialized()) return
+        if (hasError) {
+            retry()
+            return
+        }
+        if (player.playWhenReady) player.pause() else player.play()
+    }
+
+    fun setMuted(value: Boolean) {
+        muted = value
+        if (playerDelegate.isInitialized()) player.volume = if (value) 0f else 1f
+    }
+
+    /** @return true jika video sedang/ingin diputar sebelum dijeda. */
+    fun pauseForBackground(): Boolean {
+        if (!playerDelegate.isInitialized()) return false
+        val wasPlaying = player.playWhenReady
+        if (wasPlaying) player.pause()
+        return wasPlaying
+    }
+
+    fun resume() {
+        if (playerDelegate.isInitialized()) player.play()
+    }
+
+    fun syncProgress() {
+        if (!playerDelegate.isInitialized()) return
+        val p = player
+        if (!isScrubbing) positionMs = p.currentPosition.coerceAtLeast(0L)
+        bufferedMs = p.bufferedPosition.coerceAtLeast(0L)
+        val d = p.duration
+        if (d > 0L && d != durationMs) durationMs = d
+    }
+
+    fun beginScrub() {
+        isScrubbing = true
+        scrubMs = positionMs
+    }
+
+    fun scrub(ms: Long) {
+        scrubMs = ms
+    }
+
+    fun endScrub(ms: Long) {
+        seekTo(ms)
+        isScrubbing = false
+    }
+
+    fun cancelScrub() {
+        isScrubbing = false
+    }
+
+    fun seekTo(ms: Long) {
+        if (!playerDelegate.isInitialized()) return
+        val max = if (durationMs > 0L) durationMs else Long.MAX_VALUE
+        val target = ms.coerceIn(0L, max)
+        player.seekTo(target)
+        positionMs = target
+    }
+
+    fun release() {
+        if (playerDelegate.isInitialized()) player.release()
+    }
+}
+
+@Composable
+fun rememberGalleryVideoState(): GalleryVideoState {
+    val context = LocalContext.current
+    val state = remember { GalleryVideoState(context.applicationContext) }
+    DisposableEffect(state) {
+        onDispose { state.release() }
+    }
+    return state
+}
+
+private val SeekBarPadding = 10.dp
+
+private fun seekFraction(x: Float, width: Float, pad: Float): Float {
+    val track = width - 2 * pad
+    return if (track <= 0f) 0f else ((x - pad) / track).coerceIn(0f, 1f)
+}
+
+private fun formatVideoTime(ms: Long): String {
+    val totalSec = ms.coerceAtLeast(0L) / 1000L
+    val h = totalSec / 3600
+    val m = (totalSec % 3600) / 60
+    val s = totalSec % 60
+    return if (h > 0) {
+        String.format(java.util.Locale.ROOT, "%d:%02d:%02d", h, m, s)
+    } else {
+        String.format(java.util.Locale.ROOT, "%d:%02d", m, s)
+    }
+}
+
+/** Seek bar buatan sendiri: tipis, ada buffer, thumb membesar saat digeser, area sentuh tinggi. */
+@Composable
+private fun VideoSeekBar(
+    positionMs: Long,
+    durationMs: Long,
+    bufferedMs: Long,
+    enabled: Boolean,
+    onScrubStart: () -> Unit,
+    onScrub: (Long) -> Unit,
+    onScrubEnd: (Long) -> Unit,
+    onScrubCancel: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val activeColor = MaterialTheme.colorScheme.primary
+    var dragFraction by remember { mutableStateOf<Float?>(null) }
+    val dragging = dragFraction != null
+    val progress = dragFraction
+        ?: if (durationMs > 0L) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
+    val bufferedFraction =
+        if (durationMs > 0L) (bufferedMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
+    val trackHeight by animateDpAsState(if (dragging) 6.dp else 4.dp, label = "seek_track")
+    val thumbRadius by animateDpAsState(
+        if (!enabled) 0.dp else if (dragging) 10.dp else 6.dp,
+        label = "seek_thumb",
+    )
+    val latestDuration by rememberUpdatedState(durationMs)
+    val latestStart by rememberUpdatedState(onScrubStart)
+    val latestScrub by rememberUpdatedState(onScrub)
+    val latestEnd by rememberUpdatedState(onScrubEnd)
+    val latestCancel by rememberUpdatedState(onScrubCancel)
+
+    Canvas(
+        modifier = modifier
+            .pointerInput(enabled) {
+                if (!enabled) return@pointerInput
+                val pad = SeekBarPadding.toPx()
+                detectTapGestures { offset ->
+                    val f = seekFraction(offset.x, size.width.toFloat(), pad)
+                    latestEnd((f * latestDuration).toLong())
+                }
+            }
+            .pointerInput(enabled) {
+                if (!enabled) return@pointerInput
+                val pad = SeekBarPadding.toPx()
+                detectHorizontalDragGestures(
+                    onDragStart = { offset ->
+                        val f = seekFraction(offset.x, size.width.toFloat(), pad)
+                        dragFraction = f
+                        latestStart()
+                        latestScrub((f * latestDuration).toLong())
+                    },
+                    onDragEnd = {
+                        dragFraction?.let { latestEnd((it * latestDuration).toLong()) }
+                        dragFraction = null
+                    },
+                    onDragCancel = {
+                        dragFraction = null
+                        latestCancel()
+                    },
+                    onHorizontalDrag = { change, _ ->
+                        change.consume()
+                        val f = seekFraction(change.position.x, size.width.toFloat(), pad)
+                        dragFraction = f
+                        latestScrub((f * latestDuration).toLong())
+                    },
+                )
+            },
+    ) {
+        val pad = SeekBarPadding.toPx()
+        val trackWidth = size.width - 2 * pad
+        val centerY = size.height / 2f
+        val trackPx = trackHeight.toPx()
+        val top = centerY - trackPx / 2f
+        val corner = CornerRadius(trackPx / 2f, trackPx / 2f)
+        drawRoundRect(
+            color = Color.White.copy(alpha = 0.25f),
+            topLeft = Offset(pad, top),
+            size = androidx.compose.ui.geometry.Size(trackWidth, trackPx),
+            cornerRadius = corner,
+        )
+        if (bufferedFraction > 0f) {
+            drawRoundRect(
+                color = Color.White.copy(alpha = 0.4f),
+                topLeft = Offset(pad, top),
+                size = androidx.compose.ui.geometry.Size(trackWidth * bufferedFraction, trackPx),
+                cornerRadius = corner,
+            )
+        }
+        if (progress > 0f) {
+            drawRoundRect(
+                color = activeColor,
+                topLeft = Offset(pad, top),
+                size = androidx.compose.ui.geometry.Size(trackWidth * progress, trackPx),
+                cornerRadius = corner,
+            )
+        }
+        if (thumbRadius > 0.dp) {
+            drawCircle(
+                color = activeColor,
+                radius = thumbRadius.toPx(),
+                center = Offset(pad + trackWidth * progress, centerY),
+            )
+        }
+    }
+}
+
+/**
+ * Semua kontrol video ada di sini (bawah layar):
+ * baris 1 = durasi sekarang | seek bar | durasi total
+ * baris 2 = counter | prev - play/pause - next | mute, unduh
+ */
+@Composable
+private fun VideoBottomControls(
+    state: GalleryVideoState,
+    enabled: Boolean,
+    isMuted: Boolean,
+    currentIndex: Int,
+    totalCount: Int,
+    hasPrevious: Boolean,
+    hasNext: Boolean,
+    compact: Boolean,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    onToggleMute: () -> Unit,
+    onDownload: () -> Unit,
+    onInteraction: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val position = when {
+        !enabled -> 0L
+        state.isScrubbing -> state.scrubMs
+        else -> state.positionMs
+    }
+    val duration = if (enabled) state.durationMs else 0L
+    val buffered = if (enabled) state.bufferedMs else 0L
+    val seekEnabled = enabled && duration > 0L && !state.hasError
+    val sideButton = if (compact) 40.dp else 44.dp
+    val playButton = if (compact) 48.dp else 56.dp
+    val timeWidth = if (duration >= 3_600_000L) 52.dp else 38.dp
+    val timeStyle = TextStyle(
+        color = Color.White,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Medium,
+        fontFeatureSettings = "tnum",
+    )
+    val sideColors = IconButtonDefaults.iconButtonColors(
+        contentColor = Color.White,
+        disabledContentColor = Color.White.copy(alpha = 0.3f),
+    )
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        Color.Transparent,
+                        Color.Black.copy(alpha = 0.55f),
+                        Color.Black.copy(alpha = 0.88f),
+                    ),
+                ),
+            )
+            .pointerInput(Unit) {},
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(
+                    start = 16.dp,
+                    end = 16.dp,
+                    top = if (compact) 12.dp else 28.dp,
+                    bottom = if (compact) 2.dp else 8.dp,
+                ),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    formatVideoTime(position),
+                    style = timeStyle,
+                    maxLines = 1,
+                    modifier = Modifier.width(timeWidth),
+                )
+                VideoSeekBar(
+                    positionMs = position,
+                    durationMs = duration,
+                    bufferedMs = buffered,
+                    enabled = seekEnabled,
+                    onScrubStart = {
+                        onInteraction()
+                        state.beginScrub()
+                    },
+                    onScrub = { state.scrub(it) },
+                    onScrubEnd = {
+                        onInteraction()
+                        state.endScrub(it)
+                    },
+                    onScrubCancel = { state.cancelScrub() },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(if (compact) 28.dp else 36.dp),
+                )
+                Text(
+                    if (duration > 0L) formatVideoTime(duration) else "--:--",
+                    style = timeStyle,
+                    textAlign = TextAlign.End,
+                    maxLines = 1,
+                    modifier = Modifier.width(timeWidth),
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = Color.White.copy(alpha = 0.14f),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("${currentIndex + 1}", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Text(" / $totalCount", color = Color.White.copy(alpha = 0.6f), fontSize = 13.sp)
+                        }
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = {
+                            onInteraction()
+                            onPrevious()
+                        },
+                        enabled = hasPrevious,
+                        colors = sideColors,
+                        modifier = Modifier.size(sideButton).testTag("viewer_prev_button"),
+                    ) {
+                        Icon(Icons.Default.SkipPrevious, contentDescription = t("Previous", "Sebelumnya"), modifier = Modifier.size(28.dp))
+                    }
+                    IconButton(
+                        onClick = {
+                            onInteraction()
+                            state.togglePlay()
+                        },
+                        enabled = enabled,
+                        colors = IconButtonDefaults.iconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                            disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
+                            disabledContentColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.6f),
+                        ),
+                        modifier = Modifier
+                            .padding(horizontal = 8.dp)
+                            .size(playButton),
+                    ) {
+                        val showPause = state.playWhenReady && !state.hasError
+                        Icon(
+                            if (showPause) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            contentDescription = if (showPause) t("Pause", "Jeda") else t("Play", "Putar"),
+                            modifier = Modifier.size(30.dp),
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            onInteraction()
+                            onNext()
+                        },
+                        enabled = hasNext,
+                        colors = sideColors,
+                        modifier = Modifier.size(sideButton).testTag("viewer_next_button"),
+                    ) {
+                        Icon(Icons.Default.SkipNext, contentDescription = t("Next", "Berikutnya"), modifier = Modifier.size(28.dp))
+                    }
+                }
+                Row(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(
+                        onClick = {
+                            onInteraction()
+                            onToggleMute()
+                        },
+                        colors = sideColors,
+                        modifier = Modifier.size(sideButton),
+                    ) {
+                        Icon(
+                            if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                            contentDescription = t("Sound Toggle", "Suara"),
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            onInteraction()
+                            onDownload()
+                        },
+                        colors = sideColors,
+                        modifier = Modifier.size(sideButton),
+                    ) {
+                        Icon(Icons.Default.Download, contentDescription = t("Download", "Unduh"))
+                    }
+                }
+            }
+        }
+    }
+}
+/** Kontrol foto berada dalam satu baris di bawah, mengikuti posisi counter dan aksi viewer. */
+@Composable
+private fun PhotoBottomControls(
+    currentIndex: Int,
+    totalCount: Int,
+    isFitMode: Boolean,
+    compact: Boolean,
+    onRotateLeft: () -> Unit,
+    onRotateRight: () -> Unit,
+    onToggleFit: () -> Unit,
+    onDownload: () -> Unit,
+    onInteraction: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val sideButton = if (compact) 40.dp else 44.dp
+    val toolColors = IconButtonDefaults.iconButtonColors(
+        containerColor = Color.White.copy(alpha = 0.14f),
+        contentColor = Color.White,
+    )
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        Color.Transparent,
+                        Color.Black.copy(alpha = 0.55f),
+                        Color.Black.copy(alpha = 0.88f),
+                    ),
+                ),
+            )
+            .pointerInput(Unit) {},
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(
+                    start = 16.dp,
+                    end = 16.dp,
+                    top = if (compact) 8.dp else 12.dp,
+                    bottom = if (compact) 2.dp else 6.dp,
+                ),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = Color.White.copy(alpha = 0.14f),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("${currentIndex + 1}", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Text(" / $totalCount", color = Color.White.copy(alpha = 0.6f), fontSize = 13.sp)
+                        }
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = { onInteraction(); onRotateLeft() },
+                        colors = IconButtonDefaults.iconButtonColors(contentColor = Color.White),
+                        modifier = Modifier.size(sideButton),
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.RotateLeft, contentDescription = t("Rotate Left", "Putar Kiri"))
+                    }
+                    IconButton(
+                        onClick = { onInteraction(); onRotateRight() },
+                        colors = IconButtonDefaults.iconButtonColors(contentColor = Color.White),
+                        modifier = Modifier.size(sideButton),
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.RotateRight, contentDescription = t("Rotate Right", "Putar Kanan"))
+                    }
+                    IconButton(
+                        onClick = { onInteraction(); onToggleFit() },
+                        colors = toolColors,
+                        modifier = Modifier.size(sideButton),
+                    ) {
+                        Icon(
+                            if (isFitMode) Icons.Default.Fullscreen else Icons.Default.PictureInPicture,
+                            contentDescription = t("Fit/Original Size", "Fit/Original"),
+                        )
+                    }
+                }
+                Row(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(
+                        onClick = { onInteraction(); onDownload() },
+                        colors = IconButtonDefaults.iconButtonColors(contentColor = Color.White),
+                        modifier = Modifier.size(sideButton),
+                    ) {
+                        Icon(Icons.Default.Download, contentDescription = t("Download", "Unduh"))
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun PreloadGalleryNeighbors(items: List<GalleryItem>, currentIndex: Int) {
     val context = LocalContext.current

@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -111,6 +112,7 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -203,11 +205,12 @@ fun MediaOverflowMenu(
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-private fun MediaInfoBottomSheet(
+fun MediaInfoBottomSheet(
     title: String,
     rows: List<Pair<String, String>>,
     onDismiss: () -> Unit,
     closeLabel: String,
+    extraContent: @Composable ColumnScope.() -> Unit = {},
 ) {
     val lang = LocalLanguage.current
     fun t(en: String, id: String) = translate(lang, en, id)
@@ -416,6 +419,7 @@ private fun MediaInfoBottomSheet(
                         )
                     }
                 }
+                extraContent()
             }
             androidx.compose.material3.HorizontalDivider(color = DeckDivider)
             Button(
@@ -836,6 +840,16 @@ fun FolderGroupCard(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
+                        Text(
+                            text = folderName,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp),
+                        )
                         CircularProgressIndicator(
                             modifier = Modifier.size(24.dp),
                             strokeWidth = 2.5.dp,

@@ -40,6 +40,8 @@ class GalleryViewModel @Inject constructor(
     private val _selectedTagsFilter = MutableStateFlow<Set<String>>(emptySet())
     val selectedTagsFilter = _selectedTagsFilter.asStateFlow()
     private val _galleryFavoriteOnlyFilter = MutableStateFlow(value = false)
+    private val _galleryMediaType = MutableStateFlow("all")
+    val galleryMediaType = _galleryMediaType.asStateFlow()
     private val _shuffledItems = MutableStateFlow<List<GalleryItem>?>(null)
     private val _gallerySort = MutableStateFlow("date_desc")
     val gallerySort = _gallerySort.asStateFlow()
@@ -77,6 +79,7 @@ class GalleryViewModel @Inject constructor(
         val search: String,
         val tags: Set<String>,
         val favoriteOnly: Boolean,
+        val mediaType: String,
         val sort: String,
         val shuffled: List<GalleryItem>?,
         val folderName: String?,
@@ -85,10 +88,11 @@ class GalleryViewModel @Inject constructor(
         _gallerySearch,
         _selectedTagsFilter,
         _galleryFavoriteOnlyFilter,
+        _galleryMediaType,
         combine(_gallerySort, _shuffledItems, _selectedGalleryFolderName) { sort, shuffled, folder -> Triple(sort, shuffled, folder) },
-    ) { search, tags, favorite, triple ->
+    ) { search, tags, favorite, mediaType, triple ->
         val (sort, shuffled, folder) = triple
-        GalleryFilterState(search, tags, favorite, sort, shuffled, folder)
+        GalleryFilterState(search, tags, favorite, mediaType, sort, shuffled, folder)
     }
     private val offlineFilteredGalleryItems: Flow<List<GalleryItem>> = combine(
         repository.allGalleryItems,
@@ -109,6 +113,11 @@ class GalleryViewModel @Inject constructor(
     ) { items, filters ->
         if (items.isEmpty()) return@combine emptyList()
         var list = items
+        list = when (filters.mediaType) {
+            "photos" -> list.filterNot { it.mimeType.startsWith("video/", ignoreCase = true) }
+            "videos" -> list.filter { it.mimeType.startsWith("video/", ignoreCase = true) }
+            else -> list
+        }
         if (filters.search.isNotEmpty()) {
             list = list.filter {
                 it.name.contains(filters.search, ignoreCase = true) ||
@@ -191,6 +200,9 @@ class GalleryViewModel @Inject constructor(
     }
     fun setGalleryFavoriteFilter(enabled: Boolean) {
         _galleryFavoriteOnlyFilter.value = enabled
+    }
+    fun setGalleryMediaType(type: String) {
+        _galleryMediaType.value = type
     }
     fun updateGalleryItemDetails(item: GalleryItem, newFolderName: String, newTags: String, width: Int = 0, height: Int = 0) {
         viewModelScope.launch {
