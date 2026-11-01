@@ -98,7 +98,8 @@ fun ScanSection(
     val scanProgress by scannerViewModel.scanProgress.collectAsState()
     val isScanActive by scannerViewModel.isScanActive.collectAsState()
     val isScanPaused by scannerViewModel.isScanPaused.collectAsState()
-    val activeScanTarget by scannerViewModel.currentScanTarget.collectAsState()
+    val currentScanTarget by scannerViewModel.currentScanTarget.collectAsState()
+    val activeScanTarget = currentScanTarget.takeIf { isScanActive }
     val dirLauncherComics = rememberFolderPicker(context, scannerViewModel, "comics")
     val dirLauncherGallery = rememberFolderPicker(context, scannerViewModel, "gallery")
     val dirLauncherMovies = rememberFolderPicker(context, scannerViewModel, "movies")

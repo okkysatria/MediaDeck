@@ -124,6 +124,51 @@ fun GeneralSection(
             )
         }
 
+        SettingsSectionHeader(t("Scanner", "Pemindaian"))
+        SettingsCard {
+            SettingsToggleRow(
+                title = t("Scan on Startup", "Pindai Saat Buka"),
+                icon = Icons.Default.Refresh,
+                checked = settings.autoScanOnStart,
+                onCheckedChange = viewModel::setAutoScanOnStart,
+            )
+            SettingsDivider()
+            SettingsToggleRow(
+                title = t("Skip Duplicates", "Lewati Duplikat"),
+                icon = Icons.Default.ContentCopy,
+                checked = settings.skipDuplicateScan,
+                onCheckedChange = viewModel::setSkipDuplicateScan,
+            )
+            SettingsDivider()
+            SettingsToggleRow(
+                title = t("Video Thumbnails", "Thumbnail Video"),
+                icon = Icons.Default.Movie,
+                checked = settings.videoThumbnails,
+                onCheckedChange = viewModel::setVideoThumbnails,
+            )
+            SettingsDivider()
+            SettingsToggleRow(
+                title = t("Floating Scan Indicator", "Indikator Pindai Melayang"),
+                icon = Icons.Default.NotificationsActive,
+                checked = settings.floatingScanStatus,
+                onCheckedChange = viewModel::setFloatingScanStatus,
+            )
+            SettingsDivider()
+            SettingsToggleRow(
+                title = t("Local Scan Priority", "Prioritas Pindai Lokal"),
+                icon = Icons.Default.PhoneAndroid,
+                checked = settings.prioritizeLocalScan,
+                onCheckedChange = viewModel::setPrioritizeLocalScan,
+            )
+            SettingsDivider()
+            SettingsToggleRow(
+                title = t("Hide Offline SMB", "Sembunyikan SMB Offline"),
+                icon = Icons.Default.CloudOff,
+                checked = settings.hideOfflineSmb,
+                onCheckedChange = viewModel::setHideOfflineSmb,
+            )
+        }
+
         SettingsSectionHeader(t("Comic Reader", "Pembaca Komik"))
         SettingsCard {
             SettingsPickerRow(
@@ -285,51 +330,6 @@ fun GeneralSection(
                 icon = Icons.Default.PictureInPictureAlt,
                 checked = settings.enablePiP,
                 onCheckedChange = viewModel::setEnablePiP,
-            )
-        }
-
-        SettingsSectionHeader(t("Scanner", "Pemindaian"))
-        SettingsCard {
-            SettingsToggleRow(
-                title = t("Scan on Startup", "Pindai Saat Buka"),
-                icon = Icons.Default.Refresh,
-                checked = settings.autoScanOnStart,
-                onCheckedChange = viewModel::setAutoScanOnStart,
-            )
-            SettingsDivider()
-            SettingsToggleRow(
-                title = t("Skip Duplicates", "Lewati Duplikat"),
-                icon = Icons.Default.ContentCopy,
-                checked = settings.skipDuplicateScan,
-                onCheckedChange = viewModel::setSkipDuplicateScan,
-            )
-            SettingsDivider()
-            SettingsToggleRow(
-                title = t("Video Thumbnails", "Thumbnail Video"),
-                icon = Icons.Default.Movie,
-                checked = settings.videoThumbnails,
-                onCheckedChange = viewModel::setVideoThumbnails,
-            )
-            SettingsDivider()
-            SettingsToggleRow(
-                title = t("Floating Scan Indicator", "Indikator Pindai Melayang"),
-                icon = Icons.Default.NotificationsActive,
-                checked = settings.floatingScanStatus,
-                onCheckedChange = viewModel::setFloatingScanStatus,
-            )
-            SettingsDivider()
-            SettingsToggleRow(
-                title = t("Local Scan Priority", "Prioritas Pindai Lokal"),
-                icon = Icons.Default.PhoneAndroid,
-                checked = settings.prioritizeLocalScan,
-                onCheckedChange = viewModel::setPrioritizeLocalScan,
-            )
-            SettingsDivider()
-            SettingsToggleRow(
-                title = t("Hide Offline SMB", "Sembunyikan SMB Offline"),
-                icon = Icons.Default.CloudOff,
-                checked = settings.hideOfflineSmb,
-                onCheckedChange = viewModel::setHideOfflineSmb,
             )
         }
 

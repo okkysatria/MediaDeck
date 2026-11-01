@@ -191,13 +191,15 @@ class ScannerViewModel @Inject constructor(
             isForceStopped = false
             activeScanJob = viewModelScope.launch {
                 scanMutex.withLock {
-                    _currentScanTarget.value = target
                     val settings = repository.getSettingsDirect()
                     val lang = settings.language
                     if (!isManualRefresh && !settings.autoScanOnStart) {
                         _isManualRefreshing.value = false
+                        _currentScanTarget.value = null
+                        _scanProgress.value = null
                         return@withLock
                     }
+                    _currentScanTarget.value = target
                     _isScanActive.value = true
                     resetCounters()
                     _scanProgress.value = translate(lang, "Starting scan...", "Memulai pemindaian...")
